@@ -1,40 +1,38 @@
-'use client';
+"use client";
 
-import { useChat } from 'ai/react';
-import { useEffect, useRef } from 'react';
-import { BlockKind } from './block';
-import { Suggestion } from '@/lib/db/schema';
-import { initialBlockData, useBlock } from '@/hooks/use-block';
-import { useUserMessageId } from '@/hooks/use-user-message-id';
-import { cx } from 'class-variance-authority';
-import { useDeepResearch } from '@/lib/deep-research-context';
+import { useChat } from "ai/react";
+import { useEffect, useRef } from "react";
+import { BlockKind } from "./block";
+import { Suggestion } from "@/lib/db/schema";
+import { initialBlockData, useBlock } from "@/hooks/use-block";
+import { useDeepResearch } from "@/lib/deep-research-context";
 
-type DataStreamDelta = {
+export type DataStreamDelta = {
   type:
-    | 'text-delta'
-    | 'code-delta'
-    | 'spreadsheet-delta'
-    | 'title'
-    | 'id'
-    | 'suggestion'
-    | 'clear'
-    | 'finish'
-    | 'user-message-id'
-    | 'kind'
-    | 'activity-delta'
-    | 'source-delta';
+    | "text-delta"
+    | "code-delta"
+    | "spreadsheet-delta"
+    | "title"
+    | "id"
+    | "suggestion"
+    | "clear"
+    | "finish"
+    | "user-message-id"
+    | "kind"
+    | "activity-delta"
+    | "source-delta";
   content:
     | string
     | Suggestion
     | {
         type:
-          | 'search'
-          | 'extract'
-          | 'analyze'
-          | 'reasoning'
-          | 'synthesis'
-          | 'thought';
-        status: 'pending' | 'complete' | 'error';
+          | "search"
+          | "extract"
+          | "analyze"
+          | "reasoning"
+          | "synthesis"
+          | "thought";
+        status: "pending" | "complete" | "error";
         message: string;
         timestamp: string;
       }
@@ -47,7 +45,6 @@ type DataStreamDelta = {
 
 export function DataStreamHandler({ id }: { id: string }) {
   const { data: dataStream } = useChat({ id });
-  const { setUserMessageIdFromServer } = useUserMessageId();
   const { setBlock } = useBlock();
   const { addActivity, addSource } = useDeepResearch();
   const lastProcessedIndex = useRef(-1);
@@ -59,98 +56,97 @@ export function DataStreamHandler({ id }: { id: string }) {
     lastProcessedIndex.current = dataStream.length - 1;
 
     (newDeltas as DataStreamDelta[]).forEach((delta: DataStreamDelta) => {
-      if (delta.type === 'user-message-id') {
-        setUserMessageIdFromServer(delta.content as string);
+      if (delta.type === "user-message-id") {
         return;
       }
 
       setBlock((draftBlock) => {
         if (!draftBlock) {
-          return { ...initialBlockData, status: 'streaming' };
+          return { ...initialBlockData, status: "streaming" };
         }
 
         switch (delta.type) {
-          case 'id':
+          case "id":
             return {
               ...draftBlock,
               documentId: delta.content as string,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'title':
+          case "title":
             return {
               ...draftBlock,
               title: delta.content as string,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'kind':
+          case "kind":
             return {
               ...draftBlock,
               kind: delta.content as BlockKind,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'text-delta':
+          case "text-delta":
             return {
               ...draftBlock,
               content: draftBlock.content + (delta.content as string),
               isVisible:
-                draftBlock.status === 'streaming' &&
+                draftBlock.status === "streaming" &&
                 draftBlock.content.length > 400 &&
                 draftBlock.content.length < 450
                   ? true
                   : draftBlock.isVisible,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'code-delta':
+          case "code-delta":
             return {
               ...draftBlock,
               content: delta.content as string,
               isVisible:
-                draftBlock.status === 'streaming' &&
+                draftBlock.status === "streaming" &&
                 draftBlock.content.length > 300 &&
                 draftBlock.content.length < 310
                   ? true
                   : draftBlock.isVisible,
-              status: 'streaming',
+              status: "streaming",
             };
-          case 'spreadsheet-delta':
+          case "spreadsheet-delta":
             return {
               ...draftBlock,
               content: delta.content as string,
               isVisible: true,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'clear':
+          case "clear":
             return {
               ...draftBlock,
-              content: '',
-              status: 'streaming',
+              content: "",
+              status: "streaming",
             };
 
-          case 'finish':
+          case "finish":
             return {
               ...draftBlock,
-              status: 'idle',
+              status: "idle",
             };
 
-          case 'activity-delta':
+          case "activity-delta":
             const activity = delta.content as {
-              type: 'search' | 'extract' | 'analyze' | 'thought' | 'reasoning';
-              status: 'pending' | 'complete' | 'error';
+              type: "search" | "extract" | "analyze" | "thought" | "reasoning";
+              status: "pending" | "complete" | "error";
               message: string;
               timestamp: string;
             };
             addActivity(activity);
             return {
               ...draftBlock,
-              status: 'streaming',
+              status: "streaming",
             };
 
-          case 'source-delta':
+          case "source-delta":
             const source = delta.content as {
               url: string;
               title: string;
@@ -159,7 +155,7 @@ export function DataStreamHandler({ id }: { id: string }) {
             addSource(source);
             return {
               ...draftBlock,
-              status: 'streaming',
+              status: "streaming",
             };
 
           default:
@@ -167,13 +163,7 @@ export function DataStreamHandler({ id }: { id: string }) {
         }
       });
     });
-  }, [
-    dataStream,
-    setBlock,
-    setUserMessageIdFromServer,
-    addActivity,
-    addSource,
-  ]);
+  }, [dataStream, setBlock, addActivity, addSource]);
 
   return null;
 }

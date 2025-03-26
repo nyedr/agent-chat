@@ -1,32 +1,50 @@
-import { config } from 'dotenv';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
+import { config } from "dotenv";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import Database from "better-sqlite3";
+import { mkdir } from "fs/promises";
 
 config({
-  path: '.env.local',
+  path: ".env.local",
 });
 
 const runMigrate = async () => {
-  if (!process.env.POSTGRES_URL) {
-    throw new Error('POSTGRES_URL is not defined');
+  const dbUrl = process.env.DATABASE_URL || "file:./data/chat.db";
+  const dbPath = dbUrl.replace("file:", "");
+
+  // Ensure data directory exists
+  try {
+    await mkdir("./data", { recursive: true });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") {
+      console.error("Failed to create data directory:", error);
+      process.exit(1);
+    }
   }
 
-  const connection = postgres(process.env.POSTGRES_URL, { max: 1 });
-  const db = drizzle(connection);
+  const sqlite = new Database(dbPath);
+  const db = drizzle(sqlite);
 
-  console.log('⏳ Running migrations...');
+  console.log("⏳ Running migrations...");
 
   const start = Date.now();
-  await migrate(db, { migrationsFolder: './lib/db/migrations' });
-  const end = Date.now();
 
-  console.log('✅ Migrations completed in', end - start, 'ms');
-  process.exit(0);
+  try {
+    migrate(db, { migrationsFolder: "./lib/db/migrations" });
+    const end = Date.now();
+    console.log("✅ Migrations completed in", end - start, "ms");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Migration failed");
+    console.error(error);
+    process.exit(1);
+  } finally {
+    sqlite.close();
+  }
 };
 
 runMigrate().catch((err) => {
-  console.error('❌ Migration failed');
+  console.error("❌ Migration failed");
   console.error(err);
   process.exit(1);
 });

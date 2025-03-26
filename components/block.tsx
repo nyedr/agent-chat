@@ -17,13 +17,13 @@ import {
 import useSWR, { useSWRConfig } from "swr";
 import { useDebounceCallback, useWindowSize } from "usehooks-ts";
 
-import type { Document, Suggestion, Vote } from "@/lib/db/schema";
+import type { Document, Suggestion } from "@/lib/db/schema";
 import { cn, fetcher } from "@/lib/utils";
 
 import { DiffView } from "./diffview";
 import { DocumentSkeleton } from "./document-skeleton";
 import { Editor } from "./editor";
-import { MultimodalInput } from "./multimodal-input";
+import { MultimodalInput, SearchMode } from "./multimodal-input";
 import { Toolbar } from "./toolbar";
 import { VersionFooter } from "./version-footer";
 import { BlockActions } from "./block-actions";
@@ -67,8 +67,6 @@ export interface ConsoleOutput {
   contents: Array<ConsoleOutputContent>;
 }
 
-type SearchMode = "search" | "deep-research";
-
 function PureBlock({
   chatId,
   input,
@@ -82,8 +80,6 @@ function PureBlock({
   messages,
   setMessages,
   reload,
-  votes,
-  isReadonly,
   searchMode,
   setSearchMode,
 }: {
@@ -96,7 +92,6 @@ function PureBlock({
   setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
   messages: Array<Message>;
   setMessages: Dispatch<SetStateAction<Array<Message>>>;
-  votes: Array<Vote> | undefined;
   append: (
     message: Message | CreateMessage,
     chatRequestOptions?: ChatRequestOptions
@@ -110,7 +105,6 @@ function PureBlock({
   reload: (
     chatRequestOptions?: ChatRequestOptions
   ) => Promise<string | null | undefined>;
-  isReadonly: boolean;
   searchMode: SearchMode;
   setSearchMode: (mode: SearchMode) => void;
 }) {
@@ -199,7 +193,7 @@ function PureBlock({
             const newDocument = {
               ...currentDocument,
               content: updatedContent,
-              createdAt: new Date(),
+              createdAt: new Date().toISOString(),
             };
 
             return [...currentDocuments, newDocument];
@@ -338,11 +332,9 @@ function PureBlock({
                 <BlockMessages
                   chatId={chatId}
                   isLoading={isLoading}
-                  votes={votes}
                   messages={messages}
                   setMessages={setMessages}
                   reload={reload}
-                  isReadonly={isReadonly}
                   blockStatus={block.status}
                 />
 
@@ -583,7 +575,6 @@ function PureBlock({
 
 export const Block = memo(PureBlock, (prevProps, nextProps) => {
   if (prevProps.isLoading !== nextProps.isLoading) return false;
-  if (!equal(prevProps.votes, nextProps.votes)) return false;
   if (prevProps.input !== nextProps.input) return false;
   if (!equal(prevProps.messages, nextProps.messages.length)) return false;
 

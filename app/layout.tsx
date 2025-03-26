@@ -1,25 +1,27 @@
-import type { Metadata } from 'next';
-import { Toaster } from 'sonner';
+import type { Metadata } from "next";
+import { Toaster } from "sonner";
 
-import { ThemeProvider } from '@/components/theme-provider';
-import { Analytics } from '@vercel/analytics/react';
-import { DeepResearchProvider } from '@/lib/deep-research-context';
+import { ThemeProvider } from "@/components/theme-provider";
+import { Analytics } from "@vercel/analytics/react";
+import { DeepResearchProvider } from "@/lib/deep-research-context";
+import { ChatProvider } from "@/lib/chat/chat-context";
 
-import './globals.css';
+import "./globals.css";
+import { ReactScan } from "@/components/scan";
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://extract.chat'),
-  title: 'Extract Chat - by Firecrawl',
+  metadataBase: new URL("https://extract.chat"),
+  title: "Extract Chat - by Firecrawl",
   description:
-    'Extract Chat allows you to extract information from any website with the help of an AI chatbot.',
+    "Extract Chat allows you to extract information from any website with the help of an AI chatbot.",
 };
 
 export const viewport = {
   maximumScale: 1, // Disable auto-zoom on mobile Safari
 };
 
-const LIGHT_THEME_COLOR = 'hsl(0 0% 100%)';
-const DARK_THEME_COLOR = 'hsl(240deg 10% 3.92%)';
+const LIGHT_THEME_COLOR = "hsl(0 0% 100%)";
+const DARK_THEME_COLOR = "hsl(240deg 10% 3.92%)";
 const THEME_COLOR_SCRIPT = `\
 (function() {
   var html = document.documentElement;
@@ -59,16 +61,19 @@ export default async function RootLayout({
           }}
         />
       </head>
+      <ReactScan />
       <body className="antialiased">
         <ThemeProvider
           attribute="class"
-          defaultTheme="light"
+          defaultTheme="dark"
           enableSystem
           disableTransitionOnChange
         >
           <DeepResearchProvider>
-            <Toaster position="top-center" />
-            {children}
+            <ChatProvider>
+              <Toaster position="top-center" />
+              {children}
+            </ChatProvider>
           </DeepResearchProvider>
         </ThemeProvider>
         <Analytics />
