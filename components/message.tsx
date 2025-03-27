@@ -19,6 +19,8 @@ import { Progress } from "./ui/progress";
 import AnimatedGradientText from "./ui/gradient-text";
 import { deleteSingleMessage } from "@/app/(chat)/actions";
 import Image from "next/image";
+import { DocumentToolCall, DocumentToolResult } from "./document";
+import { DocumentPreview } from "./document-preview";
 
 const PurePreviewMessage = ({
   chatId,
@@ -332,6 +334,23 @@ const PurePreviewMessage = ({
                                   ? "Research completed successfully."
                                   : `Research may have failed: ${result.error}`}
                               </div>
+                            ) : toolName === "createDocument" ? (
+                              <DocumentPreview
+                                result={result}
+                                isReadonly={false}
+                              />
+                            ) : toolName === "updateDocument" ? (
+                              <DocumentToolResult
+                                type="update"
+                                isReadonly={false}
+                                result={result}
+                              />
+                            ) : toolName === "requestSuggestions" ? (
+                              <DocumentToolResult
+                                type="request-suggestions"
+                                isReadonly={false}
+                                result={result}
+                              />
                             ) : null}
                           </div>
                         );
@@ -380,6 +399,20 @@ const PurePreviewMessage = ({
                                     ]
                                   : []
                               }
+                            />
+                          ) : toolName === "createDocument" ? (
+                            <DocumentPreview isReadonly={false} args={args} />
+                          ) : toolName === "updateDocument" ? (
+                            <DocumentToolCall
+                              type="update"
+                              args={args}
+                              isReadonly={false}
+                            />
+                          ) : toolName === "requestSuggestions" ? (
+                            <DocumentToolCall
+                              type="request-suggestions"
+                              args={args}
+                              isReadonly={false}
                             />
                           ) : null}
                         </div>

@@ -7,6 +7,8 @@ import {
 } from "ai";
 import { z } from "zod";
 import { myProvider } from "@/lib/ai/models";
+import { createDocument } from "@/lib/ai/tools/create-document";
+import { updateDocument } from "@/lib/ai/tools/update-document";
 
 import { systemPrompt } from "@/lib/ai/prompts";
 import {
@@ -26,7 +28,13 @@ import {
 
 import FirecrawlApp from "@mendable/firecrawl-js";
 
-type AllowedTools = "deepResearch" | "search" | "extract" | "scrape";
+type AllowedTools =
+  | "deepResearch"
+  | "search"
+  | "extract"
+  | "scrape"
+  | "createDocument"
+  | "updateDocument";
 
 const deepResearchTools: AllowedTools[] = [
   "search",
@@ -35,7 +43,11 @@ const deepResearchTools: AllowedTools[] = [
   "deepResearch",
 ];
 
-const allTools: AllowedTools[] = [...deepResearchTools];
+const allTools: AllowedTools[] = [
+  ...deepResearchTools,
+  "createDocument",
+  "updateDocument",
+];
 
 const app = new FirecrawlApp({
   apiKey: process.env.FIRECRAWL_API_KEY || "",
@@ -139,6 +151,8 @@ export async function POST(request: Request) {
           ? deepResearchTools
           : allTools,
         tools: {
+          createDocument: createDocument({ dataStream }),
+          updateDocument: updateDocument({ dataStream }),
           search: {
             description:
               "Search for web pages. Normally you should call the extract tool after this one to get a spceific data point if search doesn't the exact data you need.",

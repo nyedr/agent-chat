@@ -330,7 +330,7 @@ function PureArtifact({
                 <form className="flex flex-row gap-2 relative items-end w-full px-4 pb-4">
                   <MultimodalInput
                     append={append}
-                    searchMode="search"
+                    searchMode="agent"
                     setSearchMode={() => {}}
                     chatId={chatId}
                     input={input}
