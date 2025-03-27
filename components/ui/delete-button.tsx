@@ -34,7 +34,7 @@ const DeleteButton = forwardRef<HTMLButtonElement, DeleteButtonProps>(
       setIsDeleting(true);
 
       try {
-        onDelete(e);
+        await onDelete(e);
       } catch (error) {
         console.error("Failed to delete message:", error);
         toast.error("Failed to delete message. Please try again.");
@@ -44,7 +44,6 @@ const DeleteButton = forwardRef<HTMLButtonElement, DeleteButtonProps>(
     };
 
     const baseClassName = cn(
-      "transition-all duration-200",
       isDeleting
         ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
         : "text-muted-foreground hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 dark:hover:text-red-400",

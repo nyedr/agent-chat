@@ -1,7 +1,7 @@
 "use client";
 
 import type { Attachment, Message } from "ai";
-import { useChat } from "ai/react";
+import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { Block } from "./block";
 import { MultimodalInput, SearchMode } from "./multimodal-input";
 import { Messages } from "./messages";
 import { useChatContext } from "@/lib/chat/chat-context";
+import { generateUUID } from "@/lib/utils";
 
 export function Chat({
   id,
@@ -35,9 +36,9 @@ export function Chat({
     input,
     setInput,
     append,
-    isLoading,
     stop,
     reload,
+    status,
   } = useChat({
     id,
     body: {
@@ -46,9 +47,12 @@ export function Chat({
       reasoningModelId: selectedReasoningModelId,
       experimental_deepResearch: searchMode === "deep-research",
     },
+    sendExtraMessageFields: true,
+    generateId: generateUUID,
     initialMessages,
-    experimental_throttle: 100,
-    onFinish: () => {
+    // experimental_throttle: 100,
+    onFinish: (message) => {
+      console.log("message generated:", message);
       notifyChatUpdated(id);
       mutate("/api/history");
     },
@@ -72,6 +76,8 @@ export function Chat({
     },
   });
 
+  const isLoading = status === "submitted" || status === "streaming";
+
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
 
   const handleSearchModeChange = (mode: SearchMode) => {
@@ -85,7 +91,14 @@ export function Chat({
           selectedModelId={selectedModelId}
           selectedReasoningModelId={selectedReasoningModelId}
         />
-        <div className="flex-1 overflow-y-auto md:px-5 px-2">
+
+        {messages.length === 0 && (
+          <h1 className="text-3xl leading-8 font-semibold text-center size-full place-items-center grid">
+            What can I help you with?
+          </h1>
+        )}
+
+        <div className="flex-1 overflow-y-auto md:px-5 px-2 pb-2 sm:pb-4">
           <Messages
             chatId={id}
             isLoading={isLoading}

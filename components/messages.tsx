@@ -47,7 +47,7 @@ function PureMessages({
   return (
     <div
       ref={messagesContainerRef}
-      className={cn("relative mx-auto max-w-3xl pt-4 flex flex-col gap-5")}
+      className={cn("relative mx-auto max-w-3xl pt-4 flex flex-col")}
     >
       {messages.map((message, index) => (
         <PreviewMessage

@@ -124,17 +124,86 @@ Do not update document right after creating it. Wait for user feedback or reques
 export const regularPrompt =
   "You are a friendly assistant! Keep your responses concise and helpful.";
 
-export const systemPrompt = ({
-  selectedChatModel,
-}: {
-  selectedChatModel: string;
-}) => {
-  if (selectedChatModel === "chat-model-reasoning") {
-    return regularPrompt;
-  } else {
-    return `${regularPrompt}\n`;
-    //  + `\n${artifactsPrompt}`;
+export const toolPrompts = {
+  search: `
+This is a guide for using the search tool, which allows you to search for web pages.
+
+**When to use \`search\`:**
+- When you need to find information on a specific topic
+- When you need to verify facts or data points
+- When the user asks a question that requires up-to-date information
+- As a first step before using the extract tool for deeper analysis
+
+**Best practices for \`search\`:**
+- Use specific, targeted search queries
+- Include important keywords and specific terms
+- Keep search queries concise and focused
+- Follow up with extract tool when you need detailed information from specific pages
+`,
+
+  extract: `
+This is a guide for using the extract tool, which allows you to extract structured data from web pages.
+
+**When to use \`extract\`:**
+- After finding relevant URLs through the search tool
+- When you need to analyze specific content on a web page
+- When you need to retrieve structured data like tables, lists, or specific sections
+- When you need to compare information across multiple sources
+
+**Best practices for \`extract\`:**
+- Be specific about what data you need to extract
+- Provide clear instructions in the prompt parameter
+- Include all relevant URLs that might contain the information
+- Use search results to identify the most promising sources
+`,
+
+  scrape: `
+This is a guide for using the scrape tool, which allows you to get the full content of a specific web page.
+
+**When to use \`scrape\`:**
+- When you have a specific URL and need its full content
+- When you need to analyze an entire page rather than extract specific data
+- When you need the raw content to process or summarize
+
+**Best practices for \`scrape\`:**
+- Only scrape pages when you have the exact URL
+- Use search first if you don't have a specific URL
+- Be prepared to process and filter the returned content
+- Consider using extract instead if you only need specific data points
+`,
+
+  deepResearch: `
+This is a guide for using the deepResearch tool, which performs comprehensive research on a topic.
+
+**When to use \`deepResearch\`:**
+- For complex questions requiring in-depth analysis
+- When the user needs comprehensive information on a topic
+- When multiple searches and extractions would be needed
+- For topics that require synthesis of information from multiple sources
+
+**Best practices for \`deepResearch\`:**
+- Frame the research topic clearly and specifically
+- Allow sufficient time for the research process to complete
+- Be prepared for a detailed, comprehensive response
+- Use for important questions where depth is more valuable than speed
+`,
+};
+
+export const systemPrompt = ({ tools = [] }: { tools?: string[] }) => {
+  let prompt = `You are a friendly assistant! Keep your responses concise and helpful.`;
+
+  // Append tool-specific prompts based on the tools array
+  if (tools && tools.length > 0) {
+    prompt += `\n\nYou have access to the following tools:\n`;
+
+    tools.forEach((tool) => {
+      if (tool in toolPrompts) {
+        prompt += `\n${toolPrompts[tool as keyof typeof toolPrompts]}`;
+      }
+    });
   }
+
+  return prompt;
 };
 
 export const sheetPrompt = `

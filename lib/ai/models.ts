@@ -1,7 +1,6 @@
 // Define model types and re-export from the API hook
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { LanguageModel } from "ai";
 
 /**
  * Constants for storage keys used throughout the application
@@ -63,11 +62,31 @@ export const DEFAULT_MODEL_NAME = process.env.NEXT_PUBLIC_DEFAULT_MODEL!;
 export const DEFAULT_REASONING_MODEL_NAME =
   process.env.NEXT_PUBLIC_DEFAULT_REASONING_MODEL!;
 
-export const myProvider = createOpenAICompatible({
-  baseURL: process.env.NEXT_PUBLIC_CHAT_BASE_URL!,
-  name: process.env.NEXT_PUBLIC_CHAT_PROVIDER!,
-  apiKey: process.env.NEXT_PUBLIC_CHAT_API_KEY,
-}).chatModel(DEFAULT_MODEL_NAME) as LanguageModel;
+/**
+ * Creates a provider instance
+ */
+function createProvider() {
+  // Get API key and base URL from environment variables
+  const provider = process.env.NEXT_PUBLIC_CHAT_PROVIDER;
+  const apiKey = process.env.NEXT_PUBLIC_CHAT_API_KEY;
+  const baseUrl = process.env.NEXT_PUBLIC_CHAT_BASE_URL;
+
+  if (!apiKey) {
+    throw new Error("API key not found");
+  }
+
+  if (!baseUrl) {
+    throw new Error("Base URL not found");
+  }
+
+  return createOpenAICompatible({
+    name: provider ?? "openai compatible",
+    apiKey,
+    baseURL: baseUrl,
+  });
+}
+
+export const myProvider = createProvider();
 
 // Fetch models function for server-side use
 export async function fetchModels(): Promise<ModelsApiResponse> {

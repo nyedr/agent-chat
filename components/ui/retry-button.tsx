@@ -54,7 +54,6 @@ const RetryButton = forwardRef<HTMLButtonElement, RetryButtonProps>(
     };
 
     const baseClassName = cn(
-      "transition-all duration-200",
       isLoading
         ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
         : "text-muted-foreground",

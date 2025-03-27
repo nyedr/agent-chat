@@ -18,6 +18,7 @@ import { useDeepResearch } from "@/lib/deep-research-context";
 import { Progress } from "./ui/progress";
 import AnimatedGradientText from "./ui/gradient-text";
 import { deleteSingleMessage } from "@/app/(chat)/actions";
+import Image from "next/image";
 
 const PurePreviewMessage = ({
   chatId,
@@ -72,7 +73,7 @@ const PurePreviewMessage = ({
   >([]);
 
   useEffect(() => {
-    if (message.toolInvocations) {
+    if (message.parts) {
       const sources: Array<{
         title: string;
         url: string;
@@ -81,13 +82,14 @@ const PurePreviewMessage = ({
         relevance: number;
       }> = [];
 
-      message.toolInvocations.forEach((toolInvocation: any) => {
+      message.parts.forEach((part) => {
         try {
           if (
-            toolInvocation.toolName === "search" &&
-            toolInvocation.state === "result"
+            part.type === "tool-invocation" &&
+            part.toolInvocation.toolName === "search" &&
+            part.toolInvocation.state === "result"
           ) {
-            const searchResults = toolInvocation.result.data.map(
+            const searchResults = part.toolInvocation.result.data.map(
               (item: any, index: number) => ({
                 title: item.title,
                 url: item.url,
@@ -106,37 +108,46 @@ const PurePreviewMessage = ({
       setSearchSources(sources);
       sources.forEach((source) => addSource(source));
     }
-  }, [message.toolInvocations, addSource]);
+  }, [message.parts, addSource]);
 
   useEffect(() => {
-    if (message.toolInvocations) {
-      message.toolInvocations.forEach((toolInvocation: any) => {
+    if (message.parts) {
+      message.parts.forEach((part) => {
         try {
-          if (toolInvocation.toolName === "deepResearch") {
+          if (
+            part.type === "tool-invocation" &&
+            part.toolInvocation.toolName === "deepResearch"
+          ) {
+            const toolInvocation = part.toolInvocation;
+
             // Handle progress initialization
             if (
               "delta" in toolInvocation &&
-              toolInvocation.delta?.type === "progress-init"
+              toolInvocation.delta &&
+              (toolInvocation.delta as any).type === "progress-init"
             ) {
-              const { maxDepth, totalSteps } = toolInvocation.delta.content;
+              const { maxDepth, totalSteps } = (toolInvocation.delta as any)
+                .content;
               initProgress(maxDepth, totalSteps);
             }
 
             // Handle depth updates
             if (
               "delta" in toolInvocation &&
-              toolInvocation.delta?.type === "depth-delta"
+              toolInvocation.delta &&
+              (toolInvocation.delta as any).type === "depth-delta"
             ) {
-              const { current, max } = toolInvocation.delta.content;
+              const { current, max } = (toolInvocation.delta as any).content;
               setDepth(current, max);
             }
 
             // Handle activity updates
             if (
               "delta" in toolInvocation &&
-              toolInvocation.delta?.type === "activity-delta"
+              toolInvocation.delta &&
+              (toolInvocation.delta as any).type === "activity-delta"
             ) {
-              const activity = toolInvocation.delta.content;
+              const activity = (toolInvocation.delta as any).content;
               addActivity(activity);
 
               if (
@@ -150,9 +161,10 @@ const PurePreviewMessage = ({
             // Handle source updates
             if (
               "delta" in toolInvocation &&
-              toolInvocation.delta?.type === "source-delta"
+              toolInvocation.delta &&
+              (toolInvocation.delta as any).type === "source-delta"
             ) {
-              addSource(toolInvocation.delta.content);
+              addSource((toolInvocation.delta as any).content);
             }
 
             // Handle final result
@@ -172,7 +184,7 @@ const PurePreviewMessage = ({
       });
     }
   }, [
-    message.toolInvocations,
+    message.parts,
     addActivity,
     addSource,
     initProgress,
@@ -230,14 +242,17 @@ const PurePreviewMessage = ({
                     "rounded-3xl px-5 py-2.5 bg-muted text-primary-foreground w-fit align-end":
                       message.role === "user",
                     "flex flex-col gap-2 items-start prose prose-sm dark:prose-invert align-start":
-                      message.role === "assistant",
+                      message.role === "assistant" &&
+                      (!message.parts || message.parts.length === 0),
                   }
                 )}
               >
-                <Markdown
-                  isUserMessage={message.role === "user"}
-                  content={getMessageContent(message)}
-                />
+                {message.role === "user" && (
+                  <Markdown
+                    isUserMessage={message.role === "user"}
+                    content={getMessageContent(message)}
+                  />
+                )}
               </div>
             )}
 
@@ -254,110 +269,136 @@ const PurePreviewMessage = ({
               </div>
             )}
 
-            {message.toolInvocations && message.toolInvocations.length > 0 && (
-              <div className="flex flex-col gap-4">
-                {message.toolInvocations.map((toolInvocation) => {
-                  const { toolName, toolCallId, state, args } = toolInvocation;
+            {message.role !== "user" &&
+              message.parts &&
+              message.parts.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {message.parts.map((part, index) => {
+                    if (part.type === "text") {
+                      return (
+                        <div
+                          key={`text-${index}`}
+                          className="markdown-message-container flex flex-col max-w-[736px] w-full gap-2 prose prose-sm dark:prose-invert"
+                        >
+                          <Markdown isUserMessage={false} content={part.text} />
+                        </div>
+                      );
+                    } else if (part.type === "tool-invocation") {
+                      const { toolInvocation } = part;
+                      const { toolName, toolCallId, state, args } =
+                        toolInvocation;
 
-                  if (state === "result") {
-                    const { result } = toolInvocation;
+                      if (state === "result") {
+                        const { result } = toolInvocation;
 
-                    return (
-                      <div key={toolCallId}>
-                        {toolName === "search" ? (
-                          <SearchResults
-                            results={result.data.map((item: any) => ({
-                              title: item.title,
-                              url: item.url,
-                              description: item.description,
-                              source: new URL(item.url).hostname,
-                              favicon: item.favicon,
-                            }))}
-                          />
-                        ) : toolName === "extract" ? (
-                          <ExtractResults
-                            results={
-                              state === "result" && result.data
-                                ? Array.isArray(result.data)
-                                  ? result.data.map((item: any) => ({
-                                      url: item.url,
-                                      data: item.data,
-                                    }))
-                                  : {
-                                      url: args.urls[0],
-                                      data: result.data,
-                                    }
-                                : []
-                            }
-                            isLoading={false}
-                          />
-                        ) : toolName === "scrape" ? (
-                          <ScrapeResults
-                            url={args.url}
-                            data={result.data}
-                            isLoading={false}
-                          />
-                        ) : toolName === "deepResearch" ? (
-                          <div className="text-sm text-muted-foreground">
-                            {result.success
-                              ? "Research completed successfully."
-                              : `Research may have failed: ${result.error}`}
+                        return (
+                          <div key={`tool-${toolCallId}`}>
+                            {toolName === "search" ? (
+                              <SearchResults
+                                results={result.data.map((item: any) => ({
+                                  title: item.title,
+                                  url: item.url,
+                                  description: item.description,
+                                  source: new URL(item.url).hostname,
+                                  favicon: item.favicon,
+                                }))}
+                              />
+                            ) : toolName === "extract" ? (
+                              <ExtractResults
+                                results={
+                                  state === "result" && result.data
+                                    ? Array.isArray(result.data)
+                                      ? result.data.map((item: any) => ({
+                                          url: item.url,
+                                          data: item.data,
+                                        }))
+                                      : {
+                                          url: args.urls[0],
+                                          data: result.data,
+                                        }
+                                    : []
+                                }
+                                isLoading={false}
+                              />
+                            ) : toolName === "scrape" ? (
+                              <ScrapeResults
+                                url={args.url}
+                                data={result.data}
+                                isLoading={false}
+                              />
+                            ) : toolName === "deepResearch" ? (
+                              <div className="text-sm text-muted-foreground">
+                                {result.success
+                                  ? "Research completed successfully."
+                                  : `Research may have failed: ${result.error}`}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
-                      </div>
-                    );
-                  }
-                  return (
-                    <div
-                      key={toolCallId}
-                      className={cx({
-                        skeleton: ["getWeather"].includes(toolName),
-                      })}
-                    >
-                      {toolName === "extract" ? (
-                        <ExtractResults results={[]} isLoading={true} />
-                      ) : toolName === "scrape" ? (
-                        <ScrapeResults
-                          url={args.url}
-                          data=""
-                          isLoading={true}
-                        />
-                      ) : toolName === "search" ? (
-                        <SearchResults results={[]} isLoading={true} />
-                      ) : toolName === "deepResearch" ? (
-                        <DeepResearchProgress
-                          state={state}
-                          activity={
-                            (
-                              toolInvocation as {
-                                state: string;
-                                delta?: {
-                                  activity?: Array<{
-                                    type: string;
-                                    status: string;
-                                    message: string;
-                                    timestamp: string;
-                                    depth?: number;
-                                    completedSteps?: number;
-                                    totalSteps?: number;
-                                  }>;
-                                };
+                        );
+                      }
+                      return (
+                        <div
+                          key={`tool-${toolCallId}`}
+                          className={cx({
+                            skeleton: ["getWeather"].includes(toolName),
+                          })}
+                        >
+                          {toolName === "extract" ? (
+                            <ExtractResults results={[]} isLoading={true} />
+                          ) : toolName === "scrape" ? (
+                            <ScrapeResults
+                              url={args.url}
+                              data=""
+                              isLoading={true}
+                            />
+                          ) : toolName === "search" ? (
+                            <SearchResults results={[]} isLoading={true} />
+                          ) : toolName === "deepResearch" ? (
+                            <DeepResearchProgress
+                              state={state}
+                              activity={
+                                (
+                                  toolInvocation as {
+                                    state: string;
+                                    delta?: {
+                                      activity?: Array<{
+                                        type: string;
+                                        status: string;
+                                        message: string;
+                                        timestamp: string;
+                                        depth?: number;
+                                        completedSteps?: number;
+                                        totalSteps?: number;
+                                      }>;
+                                    };
+                                  }
+                                ).state === "streaming" &&
+                                (toolInvocation as any).delta?.activity
+                                  ? [
+                                      ...((toolInvocation as any).delta
+                                        .activity || []),
+                                    ]
+                                  : []
                               }
-                            ).state === "streaming" &&
-                            (toolInvocation as any).delta?.activity
-                              ? [
-                                  ...((toolInvocation as any).delta.activity ||
-                                    []),
-                                ]
-                              : []
-                          }
-                        />
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    } else if (part.type === "file") {
+                      return (
+                        <div key={`file-${index}`} className="file-container">
+                          <Image
+                            src={`data:${part.mimeType};base64,${part.data}`}
+                            className="max-w-full max-h-[400px] rounded-md"
+                            alt="File"
+                          />
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              )}
 
             {(message.role === "assistant" || message.role === "user") && (
               <MessageActions
@@ -382,13 +423,7 @@ export const PreviewMessage = memo(
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.message.content !== nextProps.message.content) return false;
-    if (
-      !equal(
-        prevProps.message.toolInvocations,
-        nextProps.message.toolInvocations
-      )
-    )
-      return false;
+    if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
 
     return true;
   }

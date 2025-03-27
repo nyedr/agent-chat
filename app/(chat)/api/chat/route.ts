@@ -1,5 +1,4 @@
 import {
-  LanguageModel,
   type Message,
   createDataStreamResponse,
   generateText,
@@ -7,23 +6,21 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { myProvider } from "@/lib/ai/models";
 
 import { systemPrompt } from "@/lib/ai/prompts";
 import {
+  addChatMessage,
   createNewChat,
   deleteChatById,
   getAllChats,
   getChatById,
-  saveChatMessages,
   updateChat,
 } from "@/app/(chat)/actions";
 import {
   generateUUID,
   getMessageContent,
   getMostRecentUserMessage,
-  parseChatFromDB,
   sanitizeResponseMessages,
 } from "@/lib/utils";
 
@@ -44,33 +41,7 @@ const app = new FirecrawlApp({
   apiKey: process.env.FIRECRAWL_API_KEY || "",
 });
 
-/**
- * Creates a provider instance
- */
-function createProvider() {
-  // Get API key and base URL from environment variables
-  const provider = process.env.NEXT_PUBLIC_CHAT_PROVIDER;
-  const apiKey = process.env.NEXT_PUBLIC_CHAT_API_KEY;
-  const baseUrl = process.env.NEXT_PUBLIC_CHAT_BASE_URL;
-
-  if (!apiKey) {
-    throw new Error("API key not found");
-  }
-
-  if (!baseUrl) {
-    throw new Error("Base URL not found");
-  }
-
-  return createOpenAICompatible({
-    name: provider ?? "openai compatible",
-    apiKey,
-    baseURL: baseUrl,
-  });
-}
-
 export async function POST(request: Request) {
-  const provider = createProvider();
-
   const {
     id,
     messages,
@@ -90,6 +61,8 @@ export async function POST(request: Request) {
   if (!userMessage) {
     return new Response("No user message found", { status: 400 });
   }
+
+  console.log("userMessage:", userMessage);
 
   const chat = await getChatById({ id });
 
@@ -112,39 +85,44 @@ export async function POST(request: Request) {
     }
   }
 
-  const { messages: databaseMessages } = parseChatFromDB(chat.data?.chat ?? "");
+  const validMessages = messages
+    .with(-1, userMessage)
+    .map(({ parts, ...rest }: any) => {
+      return {
+        ...rest,
+        content: getMessageContent(rest as Message),
+      };
+    }) satisfies Message[];
 
-  const sanitizedMessages = databaseMessages.map(({ parts, ...rest }: any) => {
-    return {
-      ...rest,
-      content: getMessageContent(rest as Message),
-      id: rest.id,
-    };
-  });
+  console.log("validMessages:", validMessages);
 
-  console.log("sanitizedMessages:", sanitizedMessages);
-
-  const userMessageId = generateUUID();
-
-  await saveChatMessages({
-    messages,
+  await addChatMessage({
     chatId: id,
+    message: userMessage,
   });
 
   return createDataStreamResponse({
     execute: (dataStream) => {
       dataStream.writeData({
         type: "user-message-id",
-        content: userMessageId,
+        content: userMessage.id,
       });
 
       const result = streamText({
-        model: myProvider,
-        system: systemPrompt({ selectedChatModel: modelId }),
-        messages: sanitizedMessages,
+        model: myProvider.chatModel(modelId),
+        system: systemPrompt({
+          tools: experimental_deepResearch ? deepResearchTools : allTools,
+        }),
+        messages: validMessages,
         maxSteps: 10,
         experimental_transform: smoothStream() as any,
         experimental_generateMessageId: generateUUID,
+        // toolChoice: experimental_deepResearch
+        //   ? {
+        //       toolName: "deepResearch",
+        //       type: "tool",
+        //     }
+        //   : undefined,
         experimental_activeTools: experimental_deepResearch
           ? deepResearchTools
           : allTools,
@@ -353,7 +331,7 @@ export async function POST(request: Request) {
 
                   // Reasoning model
                   const result = await generateText({
-                    model: provider(reasoningModelId) as LanguageModel,
+                    model: myProvider.chatModel(reasoningModelId),
                     prompt: `You are a research agent analyzing findings about: ${topic}
                             You have ${timeRemainingMinutes} minutes remaining to complete the research but you don't need to use all of it.
                             Current findings: ${findings
@@ -572,7 +550,7 @@ export async function POST(request: Request) {
                 });
 
                 const finalAnalysis = await generateText({
-                  model: provider(reasoningModelId) as LanguageModel,
+                  model: myProvider.chatModel(reasoningModelId),
                   maxTokens: 16000,
                   prompt: `Create a comprehensive long analysis of ${topic} based on these findings:
                           ${researchState.findings
@@ -632,31 +610,41 @@ export async function POST(request: Request) {
         },
         onFinish: async ({ response }) => {
           try {
-            const responseMessagesWithoutIncompleteToolCalls =
-              sanitizeResponseMessages(response.messages);
+            const sanitizedResponseMessage = sanitizeResponseMessages(
+              response.messages
+            ) as Message;
 
-            const responseMessages =
-              responseMessagesWithoutIncompleteToolCalls.map((message) => {
-                const messageId = (message as any).id;
+            console.log("sanitizedResponseMessage:", sanitizedResponseMessage);
 
-                if (message.role === "assistant") {
-                  dataStream.writeMessageAnnotation({
-                    messageIdFromServer: messageId,
-                  });
-                }
+            const assistantMessageId = response.messages
+              .filter((message) => message.role === "assistant")
+              .at(-1)?.id;
 
-                return {
-                  id: messageId,
-                  chatId: id,
-                  role: message.role,
-                  content: message.content,
-                  createdAt: new Date(),
-                };
-              }) as Message[];
+            if (!assistantMessageId) {
+              throw new Error("No assistant message found!");
+            }
 
-            await saveChatMessages({
-              messages: [...messages, ...responseMessages],
+            if (sanitizedResponseMessage.role === "assistant") {
+              dataStream.writeMessageAnnotation({
+                messageIdFromServer: assistantMessageId,
+              });
+            }
+
+            const responseMessage: Message = {
+              createdAt: new Date(),
+              content: getMessageContent(sanitizedResponseMessage),
+              role: sanitizedResponseMessage.role,
+              parts: sanitizedResponseMessage.parts,
+              id: assistantMessageId,
+              experimental_attachments:
+                sanitizedResponseMessage.experimental_attachments,
+            };
+
+            console.log("responseMessage:", responseMessage);
+
+            await addChatMessage({
               chatId: id,
+              message: responseMessage,
             });
           } catch (error) {
             console.error("Failed to save chat");

@@ -2,7 +2,10 @@ import type {
   CoreAssistantMessage,
   CoreMessage,
   CoreToolMessage,
+  FilePart,
   Message,
+  TextPart,
+  ToolCallPart,
   ToolInvocation,
 } from "ai";
 import { type ClassValue, clsx } from "clsx";
@@ -133,44 +136,108 @@ export function convertToUIMessages(
   }, []);
 }
 
-// TODO: Should only return one message per assistant response
 export function sanitizeResponseMessages(
   messages: Array<CoreToolMessage | CoreAssistantMessage>
-): Array<CoreToolMessage | CoreAssistantMessage> {
+): CoreAssistantMessage & { parts: any[] } {
   const toolResultIds: Array<string> = [];
+  const toolResultMap: Record<string, any> = {};
 
+  // First pass: collect all tool result IDs and their results
   for (const message of messages) {
     if (message.role === "tool") {
       for (const content of message.content) {
         if (content.type === "tool-result") {
           toolResultIds.push(content.toolCallId);
+          toolResultMap[content.toolCallId] = content.result;
         }
       }
     }
   }
 
-  const messagesBySanitizedContent = messages.map((message) => {
-    if (message.role !== "assistant") return message;
+  // Extract text content and tool calls from assistant messages
+  const textParts: TextPart[] = [];
+  const toolCallParts: ToolCallPart[] = [];
+  const fileParts: FilePart[] = [];
 
-    if (typeof message.content === "string") return message;
+  for (const message of messages) {
+    if (message.role === "assistant") {
+      if (typeof message.content === "string") {
+        // Convert string content to TextPart
+        textParts.push({ type: "text", text: message.content });
+      } else if (Array.isArray(message.content)) {
+        // Process each part of assistant message
+        for (const part of message.content) {
+          if (part.type === "text" && part.text.trim().length > 0) {
+            textParts.push(part);
+          } else if (
+            part.type === "tool-call" &&
+            toolResultIds.includes(part.toolCallId)
+          ) {
+            toolCallParts.push(part);
+          } else if (part.type === "file") {
+            fileParts.push(part);
+          }
+          // Skip other part types as they're not handled in the UI
+        }
+      }
+    }
+  }
 
-    const sanitizedContent = message.content.filter((content) =>
-      content.type === "tool-call"
-        ? toolResultIds.includes(content.toolCallId)
-        : content.type === "text"
-        ? content.text.length > 0
-        : true
-    );
+  // Build assistantContent array (for CoreAssistantMessage.content)
+  const assistantContent: (TextPart | FilePart | ToolCallPart)[] = [
+    ...textParts,
+    ...fileParts,
+    ...toolCallParts,
+  ];
 
-    return {
-      ...message,
-      content: sanitizedContent,
+  // Build UI-compatible parts array
+  const uiParts = [];
+
+  // Add text parts
+  for (const part of textParts) {
+    uiParts.push({
+      type: "text",
+      text: part.text,
+    });
+  }
+
+  // Add file parts
+  for (const part of fileParts) {
+    uiParts.push({
+      type: "file",
+      mimeType: part.mimeType,
+      data: typeof part.data === "string" ? part.data : "",
+    });
+  }
+
+  // Add tool invocation parts
+  toolCallParts.forEach((part) => {
+    // Create tool invocation that can be used with the UI
+    const toolInvocation = {
+      state: toolResultMap[part.toolCallId] ? "result" : "call",
+      toolCallId: part.toolCallId,
+      toolName: part.toolName,
+      args: part.args,
     };
+
+    // Add result if available
+    if (toolResultMap[part.toolCallId]) {
+      (toolInvocation as any).result = toolResultMap[part.toolCallId];
+    }
+
+    // Add to UI parts
+    uiParts.push({
+      type: "tool-invocation",
+      toolInvocation,
+    });
   });
 
-  return messagesBySanitizedContent.filter(
-    (message) => message.content.length > 0
-  );
+  // Return a single assistant message with all needed properties
+  return {
+    role: "assistant",
+    content: assistantContent,
+    parts: uiParts,
+  } as CoreAssistantMessage & { parts: any[] };
 }
 
 export function sanitizeUIMessages(messages: Array<Message>): Array<Message> {
@@ -366,3 +433,14 @@ export const removeInlineTicks = (str: string): string => {
 export const capitalize = (str: string): string => {
   return str.charAt(0).toUpperCase() + str.slice(1);
 };
+
+// Define types that are not exported from the ai package
+interface ReasoningPart {
+  type: "reasoning";
+  text: string;
+}
+
+interface RedactedReasoningPart {
+  type: "redacted-reasoning";
+  data: string;
+}
