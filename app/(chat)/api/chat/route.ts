@@ -48,12 +48,30 @@ export async function POST(request: Request) {
     modelId,
     reasoningModelId,
     experimental_deepResearch = false,
+
+    // settings from request
+    maxTokens,
+    temperature,
+    topP,
+    topK,
+    presencePenalty,
+    frequencyPenalty,
+    seed,
   }: {
     id: string;
     messages: Array<Message>;
     modelId: string;
     reasoningModelId: string;
     experimental_deepResearch?: boolean;
+
+    // settings
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    presencePenalty?: number;
+    frequencyPenalty?: number;
+    seed?: number;
   } = await request.json();
 
   const userMessage = getMostRecentUserMessage(messages);
@@ -117,12 +135,6 @@ export async function POST(request: Request) {
         maxSteps: 10,
         experimental_transform: smoothStream() as any,
         experimental_generateMessageId: generateUUID,
-        // toolChoice: experimental_deepResearch
-        //   ? {
-        //       toolName: "deepResearch",
-        //       type: "tool",
-        //     }
-        //   : undefined,
         experimental_activeTools: experimental_deepResearch
           ? deepResearchTools
           : allTools,
@@ -650,6 +662,13 @@ export async function POST(request: Request) {
             console.error("Failed to save chat");
           }
         },
+        ...(maxTokens !== undefined && { maxTokens }),
+        ...(temperature !== undefined && { temperature }),
+        ...(topP !== undefined && { topP }),
+        ...(topK !== undefined && { topK }),
+        ...(presencePenalty !== undefined && { presencePenalty }),
+        ...(frequencyPenalty !== undefined && { frequencyPenalty }),
+        ...(seed !== undefined && { seed }),
       });
 
       result.mergeIntoDataStream(dataStream);

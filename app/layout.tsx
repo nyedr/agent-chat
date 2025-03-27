@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Toaster } from "sonner";
 
 import { ThemeProvider } from "@/components/theme-provider";
-import { Analytics } from "@vercel/analytics/react";
 import { DeepResearchProvider } from "@/lib/deep-research-context";
 import { ChatProvider } from "@/lib/chat/chat-context";
 
@@ -76,7 +75,6 @@ export default async function RootLayout({
             </ChatProvider>
           </DeepResearchProvider>
         </ThemeProvider>
-        <Analytics />
       </body>
     </html>
   );

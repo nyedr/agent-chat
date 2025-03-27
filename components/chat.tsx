@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { useState } from "react";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
+import { useLocalStorage } from "usehooks-ts";
 
 import { ChatHeader } from "@/components/chat-header";
 
@@ -13,6 +14,9 @@ import { MultimodalInput, SearchMode } from "./multimodal-input";
 import { Messages } from "./messages";
 import { useChatContext } from "@/lib/chat/chat-context";
 import { generateUUID } from "@/lib/utils";
+import { LLMSettings } from "./settings-dialog";
+
+const SETTINGS_STORAGE_KEY = "llmSettings";
 
 export function Chat({
   id,
@@ -28,6 +32,14 @@ export function Chat({
   const { notifyChatUpdated } = useChatContext();
   const { mutate } = useSWRConfig();
   const [searchMode, setSearchMode] = useState<SearchMode>("agent");
+  const [settings, setSettings] = useLocalStorage<LLMSettings>(
+    SETTINGS_STORAGE_KEY,
+    {}
+  );
+
+  const handleSettingsChange = (newSettings: LLMSettings) => {
+    setSettings(newSettings);
+  };
 
   const {
     messages,
@@ -46,6 +58,7 @@ export function Chat({
       modelId: selectedModelId,
       reasoningModelId: selectedReasoningModelId,
       experimental_deepResearch: searchMode === "deep-research",
+      ...settings,
     },
     sendExtraMessageFields: true,
     generateId: generateUUID,
@@ -90,6 +103,8 @@ export function Chat({
         <ChatHeader
           selectedModelId={selectedModelId}
           selectedReasoningModelId={selectedReasoningModelId}
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
         />
 
         {messages.length === 0 && (
