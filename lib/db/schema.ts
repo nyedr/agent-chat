@@ -51,6 +51,7 @@ export const document = sqliteTable("document", {
   title: text("title").notNull(),
   content: text("content"),
   kind: text("kind").notNull().default("text"),
+  chatId: text("chatId").references(() => chat.id),
 });
 
 export type Document = InferSelectModel<typeof document>;

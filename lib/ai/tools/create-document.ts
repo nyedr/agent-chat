@@ -8,9 +8,17 @@ import { z } from "zod";
 
 interface CreateDocumentProps {
   dataStream: DataStreamWriter;
+  chatId: string;
 }
 
-export const createDocument = ({ dataStream }: CreateDocumentProps) =>
+interface CreateDocumentToolResult {
+  id: string;
+  title: string;
+  kind: string;
+  content: string;
+}
+
+export const createDocument = ({ dataStream, chatId }: CreateDocumentProps) =>
   tool({
     description:
       "Create a document for a writing or content creation activities. This tool will call other functions that will generate the contents of the document based on the title and kind.",
@@ -18,7 +26,7 @@ export const createDocument = ({ dataStream }: CreateDocumentProps) =>
       title: z.string(),
       kind: z.enum(artifactKinds),
     }),
-    execute: async ({ title, kind }) => {
+    execute: async ({ title, kind }): Promise<CreateDocumentToolResult> => {
       const id = generateUUID();
 
       dataStream.writeData({
@@ -54,6 +62,7 @@ export const createDocument = ({ dataStream }: CreateDocumentProps) =>
         id,
         title,
         dataStream,
+        chatId,
       });
 
       dataStream.writeData({ type: "finish", content: "" });

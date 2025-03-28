@@ -19,6 +19,7 @@ export interface CreateDocumentCallbackProps {
   id: string;
   title: string;
   dataStream: DataStreamWriter;
+  chatId: string;
 }
 
 export interface UpdateDocumentCallbackProps {
@@ -45,6 +46,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         id: args.id,
         title: args.title,
         dataStream: args.dataStream,
+        chatId: args.chatId,
       });
 
       await saveDocument({
@@ -52,6 +54,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         title: args.title,
         content: draftContent,
         kind: config.kind as "text" | "code" | "image",
+        chatId: args.chatId,
       });
 
       return;

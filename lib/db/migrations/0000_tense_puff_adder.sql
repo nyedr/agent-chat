@@ -14,7 +14,9 @@ CREATE TABLE `document` (
 	`createdAt` text NOT NULL,
 	`title` text NOT NULL,
 	`content` text,
-	`kind` text DEFAULT 'text' NOT NULL
+	`kind` text DEFAULT 'text' NOT NULL,
+	`chatId` text NOT NULL,
+	FOREIGN KEY (`chatId`) REFERENCES `chat`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `suggestion` (

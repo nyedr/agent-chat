@@ -7,6 +7,14 @@ interface UpdateDocumentProps {
   dataStream: DataStreamWriter;
 }
 
+interface UpdateDocumentToolResult {
+  id: string;
+  title?: string;
+  kind?: string;
+  content?: string;
+  error?: string;
+}
+
 export const updateDocument = ({ dataStream }: UpdateDocumentProps) =>
   tool({
     description: "Update a document with the given description.",
@@ -16,11 +24,12 @@ export const updateDocument = ({ dataStream }: UpdateDocumentProps) =>
         .string()
         .describe("The description of changes that need to be made"),
     }),
-    execute: async ({ id, description }) => {
+    execute: async ({ id, description }): Promise<UpdateDocumentToolResult> => {
       const document = await getDocumentById({ id });
 
       if (!document) {
         return {
+          id,
           error: "Document not found",
         };
       }

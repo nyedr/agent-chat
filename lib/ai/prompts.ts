@@ -1,4 +1,5 @@
 import { ArtifactKind } from "@/components/artifact";
+import { Document } from "../db/schema";
 
 export const continuePrompt = `
 Continue the assistant's previous response seamlessly, as if you were still in the middle of the same thought. 
@@ -101,6 +102,8 @@ export const toolPrompts = {
 
   This is a guide for using artifacts tool: \`createDocument\`, which renders content on an artifact beside the conversation.
 
+  DON'T rewrite the document content when you have already created the document
+
   **When to use \`createDocument\`:**
   - For substantial content (>10 lines) or code
   - For content users will likely save/reuse (emails, code, essays, etc.)
@@ -189,8 +192,24 @@ This is a guide for using the deepResearch tool, which performs comprehensive re
 `,
 };
 
-export const systemPrompt = ({ tools = [] }: { tools?: string[] }) => {
+interface SystemPromptProps {
+  tools?: string[];
+  documents?: Document[];
+}
+
+export const systemPrompt = ({
+  tools = [],
+  documents = [],
+}: SystemPromptProps) => {
   let prompt = `You are a friendly assistant! Keep your responses concise and helpful.`;
+
+  if (documents && documents.length > 0) {
+    prompt += `\n\nHere are the documents you have access to:\n`;
+
+    documents.forEach((document) => {
+      prompt += `\n Title: ${document.title} - ID: ${document.id}`;
+    });
+  }
 
   // Append tool-specific prompts based on the tools array
   if (tools && tools.length > 0) {

@@ -1,9 +1,10 @@
 import { BlockKind } from "@/components/block";
 import {
+  saveDocument,
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
-  saveDocument,
 } from "@/app/(chat)/actions";
+import { Document } from "@/lib/db/schema";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -13,11 +14,9 @@ export async function GET(request: Request) {
     return new Response("Missing id", { status: 400 });
   }
 
-  const documents = await getDocumentsById({ id });
+  const documents: Document[] = await getDocumentsById({ id });
 
-  const [document] = documents;
-
-  if (!document) {
+  if (documents.length === 0) {
     return new Response("Not Found", { status: 404 });
   }
 
@@ -27,9 +26,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
+  const chatId = searchParams.get("chatId");
 
   if (!id) {
     return new Response("Missing id", { status: 400 });
+  }
+
+  if (!chatId) {
+    return new Response("Missing chatId", { status: 400 });
   }
 
   const {
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
     content,
     title,
     kind: kind as "text" | "code" | "image",
+    chatId,
   });
 
   return Response.json(document, { status: 200 });
@@ -56,14 +61,6 @@ export async function PATCH(request: Request) {
 
   if (!id) {
     return new Response("Missing id", { status: 400 });
-  }
-
-  const documents = await getDocumentsById({ id });
-
-  const [document] = documents;
-
-  if (!document) {
-    return new Response("Not Found", { status: 404 });
   }
 
   await deleteDocumentsByIdAfterTimestamp({

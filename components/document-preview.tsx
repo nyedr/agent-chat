@@ -8,7 +8,7 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { BlockKind, UIBlock } from "./block";
+import { UIBlock } from "./block";
 import { FileIcon, FullscreenIcon, LoaderIcon } from "./icons";
 import { cn, fetcher } from "@/lib/utils";
 import { Document } from "@/lib/db/schema";
@@ -25,17 +25,19 @@ interface DocumentPreviewProps {
   isReadonly: boolean;
   result?: any;
   args?: any;
+  chatId: string;
 }
 
 export function DocumentPreview({
   isReadonly,
   result,
   args,
+  chatId,
 }: DocumentPreviewProps) {
   const { block, setBlock } = useBlock();
 
   const { data: documents, isLoading: isDocumentsFetching } = useSWR<
-    Array<Document>
+    Document[]
   >(result ? `/api/document?id=${result.id}` : null, fetcher);
 
   const previewDocument = useMemo(() => documents?.[0], [documents]);
@@ -91,6 +93,7 @@ export function DocumentPreview({
         content: block.content,
         id: block.documentId,
         createdAt: new Date().toISOString(),
+        chatId: chatId,
       }
     : null;
 

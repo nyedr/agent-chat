@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { UIBlock } from '@/components/block';
-import { useCallback, useMemo } from 'react';
-import useSWR from 'swr';
+import { UIBlock } from "@/components/block";
+import { useCallback, useMemo } from "react";
+import useSWR from "swr";
 
 export const initialBlockData: UIBlock = {
-  documentId: 'init',
-  content: '',
-  kind: 'text',
-  title: '',
-  status: 'idle',
+  documentId: "init",
+  content: "",
+  kind: "text",
+  title: "",
+  status: "idle",
   isVisible: false,
   boundingBox: {
     top: 0,
@@ -23,7 +23,7 @@ export const initialBlockData: UIBlock = {
 type Selector<T> = (state: UIBlock) => T;
 
 export function useBlockSelector<Selected>(selector: Selector<Selected>) {
-  const { data: localBlock } = useSWR<UIBlock>('block', null, {
+  const { data: localBlock } = useSWR<UIBlock>("block", null, {
     fallbackData: initialBlockData,
   });
 
@@ -37,11 +37,11 @@ export function useBlockSelector<Selected>(selector: Selector<Selected>) {
 
 export function useBlock() {
   const { data: localBlock, mutate: setLocalBlock } = useSWR<UIBlock>(
-    'block',
+    "block",
     null,
     {
       fallbackData: initialBlockData,
-    },
+    }
   );
 
   const block = useMemo(() => {
@@ -54,14 +54,14 @@ export function useBlock() {
       setLocalBlock((currentBlock) => {
         const blockToUpdate = currentBlock || initialBlockData;
 
-        if (typeof updaterFn === 'function') {
+        if (typeof updaterFn === "function") {
           return updaterFn(blockToUpdate);
         }
 
         return updaterFn;
       });
     },
-    [setLocalBlock],
+    [setLocalBlock]
   );
 
   return useMemo(() => ({ block, setBlock }), [block, setBlock]);

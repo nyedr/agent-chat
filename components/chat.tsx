@@ -54,7 +54,7 @@ export function Chat({
   } = useChat({
     id,
     body: {
-      id,
+      chatId: id,
       modelId: selectedModelId,
       reasoningModelId: selectedReasoningModelId,
       experimental_deepResearch: searchMode === "deep-research",

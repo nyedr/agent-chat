@@ -47,7 +47,7 @@ function PureMessages({
   return (
     <div
       ref={messagesContainerRef}
-      className={cn("relative mx-auto max-w-3xl pt-4 flex flex-col")}
+      className={cn("relative mx-auto max-w-3xl pt-4 flex flex-col gap-2")}
     >
       {messages.map((message, index) => (
         <PreviewMessage
@@ -67,7 +67,7 @@ function PureMessages({
         />
       ))}
 
-      {isLoading && <ThinkingMessage />}
+      {/* {isLoading && <ThinkingMessage />} */}
 
       <div
         ref={messagesEndRef}

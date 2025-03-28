@@ -9,13 +9,7 @@ import {
   validateUUID,
 } from "@/lib/utils";
 import { getDb } from "@/lib/db/init";
-import {
-  chat,
-  document,
-  folder,
-  Suggestion,
-  suggestion,
-} from "@/lib/db/schema";
+import { chat, Document, document, folder, suggestion } from "@/lib/db/schema";
 import { Message } from "ai";
 
 export async function saveChat({
@@ -373,52 +367,6 @@ export async function createNewChat({
   }
 }
 
-export async function updateChatMessages(id: string, messages: Message[]) {
-  try {
-    validateUUID(id);
-
-    // Only log essential information
-    console.log(
-      `[ACTION] Updating chat ${id} with ${messages.length} messages`
-    );
-
-    const db = await getDb();
-    const existingChat = db.select().from(chat).where(eq(chat.id, id)).get();
-
-    if (!existingChat) {
-      throw new Error(`Chat not found with ID: ${id}`);
-    }
-
-    // Sanitize message content to remove any SSE formatting
-    const sanitizedMessages = messages.map((msg) => ({
-      ...msg,
-      content: msg.content,
-    }));
-
-    const updateResult = db
-      .update(chat)
-      .set({
-        chat: parseChatToDB({
-          currentId:
-            sanitizedMessages[sanitizedMessages.length - 1]?.id || null,
-          messages: sanitizedMessages,
-        }),
-        updated_at: new Date().toISOString(),
-      })
-      .where(eq(chat.id, id))
-      .run();
-
-    if (!updateResult?.changes) {
-      throw new Error("Failed to update chat messages");
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to update chat messages:", error);
-    throw error;
-  }
-}
-
 /**
  * Updates a specific message in a chat
  * @param chatId The ID of the chat
@@ -497,28 +445,62 @@ export async function saveDocument({
   title,
   kind,
   content,
+  chatId,
 }: {
   id: string;
   title: string;
   kind: "text" | "code" | "image";
   content: string;
+  chatId?: string;
 }) {
   try {
     validateUUID(id);
-    const db = await getDb();
-    const result = db
-      .insert(document)
-      .values({
-        id,
-        title,
-        kind,
-        content,
-        createdAt: new Date().toISOString(),
-      })
-      .run();
 
-    if (!result?.changes) {
-      throw new Error("Failed to save document");
+    const db = await getDb();
+
+    // If chatId is provided (new document), validate it
+    if (chatId) {
+      validateUUID(chatId);
+    }
+
+    // For updates (no chatId), first check if document exists
+    if (!chatId) {
+      const existingDoc = await getDocumentById({ id });
+      if (!existingDoc) {
+        throw new Error(`Document with id ${id} not found for update`);
+      }
+
+      // Update existing document
+      const result = db
+        .update(document)
+        .set({
+          title,
+          content,
+          kind,
+        })
+        .where(eq(document.id, id))
+        .run();
+
+      if (!result?.changes) {
+        throw new Error("Failed to update document");
+      }
+    } else {
+      // Insert new document with chatId
+      const result = db
+        .insert(document)
+        .values({
+          id,
+          title,
+          kind,
+          content,
+          chatId,
+          createdAt: new Date().toISOString(),
+        })
+        .run();
+
+      if (!result?.changes) {
+        throw new Error("Failed to save document");
+      }
     }
 
     return { success: true };
@@ -545,6 +527,26 @@ export async function getDocumentById({ id }: { id: string }) {
   }
 }
 
+export async function getDocumentsByChatId({
+  chatId,
+}: {
+  chatId: string;
+}): Promise<Document[]> {
+  try {
+    validateUUID(chatId);
+    const db = await getDb();
+    const docs = db
+      .select()
+      .from(document)
+      .where(eq(document.chatId, chatId))
+      .all();
+    return docs;
+  } catch (error) {
+    console.error("Failed to get documents by chat id:", error);
+    throw error;
+  }
+}
+
 export async function getDocumentsById({ id }: { id: string }) {
   try {
     validateUUID(id);
@@ -559,6 +561,21 @@ export async function getDocumentsById({ id }: { id: string }) {
     return docs;
   } catch (error) {
     console.error("Failed to get document by id:", error);
+    throw error;
+  }
+}
+
+export async function deleteDocumentsByChatId({ chatId }: { chatId: string }) {
+  try {
+    validateUUID(chatId);
+    const db = await getDb();
+    const result = db.delete(document).where(eq(document.chatId, chatId)).run();
+
+    if (!result?.changes) {
+      throw new Error("Failed to delete documents");
+    }
+  } catch (error) {
+    console.error("Failed to delete documents by chat id:", error);
     throw error;
   }
 }
@@ -595,27 +612,6 @@ export async function deleteDocumentsByIdAfterTimestamp({
     return { success: true };
   } catch (error) {
     console.error("Failed to delete documents:", error);
-    throw error;
-  }
-}
-
-export async function saveSuggestions(suggestions: Array<Suggestion>) {
-  try {
-    const db = await getDb();
-    const suggestionsWithIds = suggestions.map((suggestion) => ({
-      ...suggestion,
-      id: generateUUID(),
-    }));
-
-    const result = db.insert(suggestion).values(suggestionsWithIds).run();
-
-    if (!result?.changes) {
-      throw new Error("Failed to save suggestions");
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Failed to save suggestions:", error);
     throw error;
   }
 }
@@ -783,35 +779,6 @@ export async function updateChat({
     console.error("Failed to update chat:", error);
     throw error;
   }
-}
-
-/**
- * Saves chat messages to the database
- * @param chatId The chat ID
- * @param messages Array of messages to save
- * @returns Promise that resolves when save is complete
- */
-export async function saveChatMessages({
-  chatId,
-  messages,
-}: {
-  chatId: string;
-  messages: Message[];
-}): Promise<Response | void> {
-  const currentId =
-    messages.length > 0 ? messages[messages.length - 1].id : null;
-
-  await updateChatHistory({
-    id: chatId,
-    history: {
-      currentId,
-      messages,
-    },
-  });
-
-  return new Response(JSON.stringify({ success: true }), {
-    headers: { "Content-Type": "application/json" },
-  });
 }
 
 export async function addChatMessage({

@@ -12,10 +12,13 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 import type { Document } from "@/lib/db/schema";
+import { join } from "path";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export const UPLOADS_DIR = join(process.cwd(), "data", "uploads");
 
 interface ApplicationError extends Error {
   info: string;
@@ -443,4 +446,160 @@ interface ReasoningPart {
 interface RedactedReasoningPart {
   type: "redacted-reasoning";
   data: string;
+}
+
+/**
+ * Processes search results from message parts and returns an array of source objects
+ */
+export function extractSearchSources(messageParts: any[] | undefined): Array<{
+  title: string;
+  url: string;
+  description: string;
+  source: string;
+  relevance: number;
+}> {
+  if (!messageParts) return [];
+
+  const sources: Array<{
+    title: string;
+    url: string;
+    description: string;
+    source: string;
+    relevance: number;
+  }> = [];
+
+  messageParts.forEach((part) => {
+    try {
+      if (
+        part.type === "tool-invocation" &&
+        part.toolInvocation.toolName === "search" &&
+        part.toolInvocation.state === "result"
+      ) {
+        const searchResults = part.toolInvocation.result.data.map(
+          (item: any, index: number) => ({
+            title: item.title,
+            url: item.url,
+            description: item.description,
+            source: new URL(item.url).hostname,
+            relevance: 1 - index * 0.1, // Decrease relevance for each subsequent result
+          })
+        );
+        sources.push(...searchResults);
+      }
+    } catch (error) {
+      console.error("Error processing search results:", error);
+    }
+  });
+
+  return sources;
+}
+
+/**
+ * Processes deep research updates from message parts
+ */
+export function processDeepResearchUpdates(
+  messageParts: any[] | undefined,
+  callbacks: {
+    addActivity: (activity: any) => void;
+    addSource: (source: any) => void;
+    initProgress: (maxDepth: number, totalSteps: number) => void;
+    setDepth: (current: number, max: number) => void;
+    updateProgress: (completed: number, total: number) => void;
+  }
+): void {
+  if (!messageParts) return;
+
+  messageParts.forEach((part) => {
+    try {
+      if (
+        part.type === "tool-invocation" &&
+        part.toolInvocation.toolName === "deepResearch"
+      ) {
+        const toolInvocation = part.toolInvocation;
+
+        // Handle progress initialization
+        if (
+          "delta" in toolInvocation &&
+          toolInvocation.delta &&
+          (toolInvocation.delta as any).type === "progress-init"
+        ) {
+          const { maxDepth, totalSteps } = (toolInvocation.delta as any)
+            .content;
+          callbacks.initProgress(maxDepth, totalSteps);
+        }
+
+        // Handle depth updates
+        if (
+          "delta" in toolInvocation &&
+          toolInvocation.delta &&
+          (toolInvocation.delta as any).type === "depth-delta"
+        ) {
+          const { current, max } = (toolInvocation.delta as any).content;
+          callbacks.setDepth(current, max);
+        }
+
+        // Handle activity updates
+        if (
+          "delta" in toolInvocation &&
+          toolInvocation.delta &&
+          (toolInvocation.delta as any).type === "activity-delta"
+        ) {
+          const activity = (toolInvocation.delta as any).content;
+          callbacks.addActivity(activity);
+
+          if (
+            activity.completedSteps !== undefined &&
+            activity.totalSteps !== undefined
+          ) {
+            callbacks.updateProgress(
+              activity.completedSteps,
+              activity.totalSteps
+            );
+          }
+        }
+
+        // Handle source updates
+        if (
+          "delta" in toolInvocation &&
+          toolInvocation.delta &&
+          (toolInvocation.delta as any).type === "source-delta"
+        ) {
+          callbacks.addSource((toolInvocation.delta as any).content);
+        }
+
+        // Handle final result
+        if (
+          toolInvocation.state === "result" &&
+          toolInvocation.result?.success
+        ) {
+          const { completedSteps, totalSteps } = toolInvocation.result.data;
+          if (completedSteps !== undefined && totalSteps !== undefined) {
+            callbacks.updateProgress(completedSteps, totalSteps);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error processing deep research update:", error);
+    }
+  });
+}
+
+/**
+ * Formats time in minutes:seconds
+ */
+export function formatTimeMS(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Calculates progress percentage
+ */
+export function calculateProgressPercentage(
+  completed: number,
+  total: number
+): number {
+  if (total === 0) return 0;
+  return Math.min((completed / total) * 100, 100);
 }
