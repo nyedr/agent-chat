@@ -1,6 +1,6 @@
-import { motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface DeepResearchProps {
   isActive: boolean;
@@ -8,13 +8,13 @@ interface DeepResearchProps {
   isLoading?: boolean;
   activity?: Array<{
     type:
-      | 'search'
-      | 'extract'
-      | 'analyze'
-      | 'reasoning'
-      | 'synthesis'
-      | 'thought';
-    status: 'pending' | 'complete' | 'error';
+      | "search"
+      | "extract"
+      | "analyze"
+      | "reasoning"
+      | "synthesis"
+      | "thought";
+    status: "pending" | "complete" | "error";
     message: string;
     timestamp: string;
   }>;
@@ -23,14 +23,13 @@ interface DeepResearchProps {
     title: string;
     relevance: number;
   }>;
-  deepResearch?: boolean;
 }
 
 export function DeepResearch({
   isLoading,
   activity = [],
   sources = [],
-  deepResearch = true
+  isActive,
 }: DeepResearchProps) {
   if (activity.length === 0 && sources.length === 0) {
     return null;
@@ -38,11 +37,16 @@ export function DeepResearch({
 
   return (
     <div className="fixed right-4 top-20 w-80 bg-background border rounded-lg shadow-lg p-4 max-h-[80vh] flex flex-col overflow-y-scroll">
-      <Tabs defaultValue={deepResearch ? "activity" : "sources"} className="flex flex-col h-full">
+      <Tabs
+        defaultValue={isActive ? "activity" : "sources"}
+        className="flex flex-col h-full"
+      >
         <TabsList className="w-full">
-          {deepResearch && <TabsTrigger value="activity" className="flex-1">
-            Activity
-          </TabsTrigger>}
+          {isActive && (
+            <TabsTrigger value="activity" className="flex-1">
+              Activity
+            </TabsTrigger>
+          )}
           <TabsTrigger value="sources" className="flex-1">
             Sources
           </TabsTrigger>
@@ -59,10 +63,10 @@ export function DeepResearch({
               >
                 <div
                   className={cn(
-                    'size-2 rounded-full shrink-0',
-                    item.status === 'pending' && 'bg-yellow-500',
-                    item.status === 'complete' && 'bg-green-500',
-                    item.status === 'error' && 'bg-red-500',
+                    "size-2 rounded-full shrink-0",
+                    item.status === "pending" && "bg-yellow-500",
+                    item.status === "complete" && "bg-green-500",
+                    item.status === "error" && "bg-red-500"
                   )}
                 />
                 <div className="flex-1 min-w-0">

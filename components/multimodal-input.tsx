@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 import { useLocalStorage, useWindowSize } from "usehooks-ts";
 
-import { cn, sanitizeUIMessages } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 import { ArrowUpIcon, PaperclipIcon, RobotIcon, StopIcon } from "./icons";
 import { PreviewAttachment } from "./preview-attachment";
@@ -26,7 +26,7 @@ import { SuggestedActions } from "./suggested-actions";
 import equal from "fast-deep-equal";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import { DeepResearch } from "./deep-research";
-import { Telescope, Search } from "lucide-react";
+import { Telescope } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
 export type SearchMode = "agent" | "deep-research";
@@ -293,7 +293,6 @@ function PureMultimodalInput({
                 isLoading={isLoading}
                 activity={deepResearchState.activity}
                 sources={deepResearchState.sources}
-                deepResearch={searchMode === "deep-research"}
               />
             )}
 
@@ -401,9 +400,6 @@ function PureMultimodalInput({
                           onClick={(event) => {
                             event.preventDefault();
                             stop();
-                            setMessages((messages) =>
-                              sanitizeUIMessages(messages)
-                            );
                           }}
                           variant="ghost"
                         >

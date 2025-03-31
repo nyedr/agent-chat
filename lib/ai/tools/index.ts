@@ -1,15 +1,6 @@
-import { createDocument } from "./create-document";
-import { deepResearch } from "./deep-research";
-import { searchTool } from "./search";
-import { updateDocument } from "./update-document";
-import { extractTool } from "./extract";
-import { scrapeTool } from "./scrape";
-
-export {
-  createDocument,
-  deepResearch,
-  searchTool,
-  updateDocument,
-  extractTool,
-  scrapeTool,
-};
+export { createDocument } from "./create-document";
+export { deepResearch } from "@/lib/deep-research/adapter";
+export { searchTool } from "./search";
+export { updateDocument } from "./update-document";
+export { extractTool } from "./extract";
+export { scrapeTool } from "./scrape";

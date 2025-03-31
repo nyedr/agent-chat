@@ -63,3 +63,5 @@ tsconfig.tsbuildinfo
 pnpm-lock.yaml
 
 todos.md
+
+.venv

@@ -35,6 +35,11 @@ import { useSidebar } from "./ui/sidebar";
 import { useBlock } from "@/hooks/use-block";
 import equal from "fast-deep-equal";
 import { SpreadsheetEditor } from "./spreadsheet-editor";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 
 /** Type representing the possible block kinds: 'text' | 'code' | 'spreadsheet' */
 export type BlockKind = "text" | "code" | "spreadsheet";
@@ -276,69 +281,193 @@ function PureBlock({
       {block.isVisible && (
         <motion.div
           className="flex flex-row h-dvh w-dvw fixed top-0 left-0 z-50 bg-transparent"
-          initial={{ opacity: 1 }}
+          initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, transition: { delay: 0.4 } }}
         >
-          {!isMobile && (
-            <motion.div
-              className="fixed bg-background h-dvh"
-              initial={{
-                width: isSidebarOpen ? windowWidth - 256 : windowWidth,
-                right: 0,
-              }}
-              animate={{ width: windowWidth, right: 0 }}
-              exit={{
-                width: isSidebarOpen ? windowWidth - 256 : windowWidth,
-                right: 0,
-              }}
-            />
-          )}
-
-          {!isMobile && (
-            <motion.div
-              className="relative w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
-              initial={{ opacity: 0, x: 10, scale: 1 }}
-              animate={{
-                opacity: 1,
-                x: 0,
-                scale: 1,
-                transition: {
-                  delay: 0.2,
-                  type: "spring",
-                  stiffness: 200,
-                  damping: 30,
-                },
-              }}
-              exit={{
-                opacity: 0,
-                x: 0,
-                scale: 1,
-                transition: { duration: 0 },
-              }}
-            >
-              <AnimatePresence>
-                {!isCurrentVersion && (
-                  <motion.div
-                    className="left-0 absolute h-dvh w-[400px] top-0 bg-zinc-900/50 z-50"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
+          {isMobile ? (
+            <>
+              <motion.div
+                className="fixed bg-background h-dvh w-full"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              />
+              <motion.div
+                className="absolute top-0 left-0 dark:bg-muted bg-background h-dvh w-full flex flex-col overflow-y-scroll"
+                initial={{
+                  opacity: 1,
+                  x: block.boundingBox.left,
+                  y: block.boundingBox.top,
+                  height: block.boundingBox.height,
+                  width: block.boundingBox.width,
+                  borderRadius: 50,
+                }}
+                animate={{
+                  opacity: 1,
+                  x: 0,
+                  y: 0,
+                  height: windowHeight,
+                  width: windowWidth ? windowWidth : "100dvw",
+                  borderRadius: 0,
+                  transition: {
+                    delay: 0,
+                    type: "spring",
+                    stiffness: 200,
+                    damping: 30,
+                    duration: 5000,
+                  },
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: 0.5,
+                  transition: {
+                    delay: 0.1,
+                    type: "spring",
+                    stiffness: 600,
+                    damping: 30,
+                  },
+                }}
+              >
+                <div className="p-2 flex flex-row justify-between items-start">
+                  <div className="flex flex-row gap-4 items-start">
+                    <BlockCloseButton />
+                    <div className="flex flex-col">
+                      <div className="font-medium">{block.title}</div>
+                      {isContentDirty ? (
+                        <div className="text-sm text-muted-foreground">
+                          Saving changes...
+                        </div>
+                      ) : document ? (
+                        <div className="text-sm text-muted-foreground">
+                          {`Updated ${formatDistance(
+                            new Date(document.createdAt),
+                            new Date(),
+                            {
+                              addSuffix: true,
+                            }
+                          )}`}
+                        </div>
+                      ) : (
+                        <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
+                      )}
+                    </div>
+                  </div>
+                  <BlockActions
+                    block={block}
+                    currentVersionIndex={currentVersionIndex}
+                    handleVersionChange={handleVersionChange}
+                    isCurrentVersion={isCurrentVersion}
+                    mode={mode}
+                    setConsoleOutputs={setConsoleOutputs}
                   />
-                )}
-              </AnimatePresence>
+                </div>
 
-              <div className="flex flex-col h-full justify-between items-center gap-4">
-                <BlockMessages
-                  chatId={chatId}
-                  isLoading={isLoading}
-                  messages={messages}
-                  setMessages={setMessages}
-                  reload={reload}
-                  blockStatus={block.status}
-                />
+                <div
+                  className={cn(
+                    "dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full pb-40 items-center",
+                    {
+                      "py-2 px-2": block.kind === "code",
+                      "py-8 md:p-20 px-4": block.kind === "text",
+                      "w-full": block.kind === "spreadsheet",
+                    }
+                  )}
+                >
+                  <div
+                    className={cn("flex flex-row", {
+                      "": block.kind === "code",
+                      "mx-auto max-w-[600px]": block.kind === "text",
+                    })}
+                  >
+                    {isDocumentsFetching && !block.content ? (
+                      <DocumentSkeleton />
+                    ) : block.kind === "code" ? (
+                      <CodeEditor
+                        content={
+                          isCurrentVersion
+                            ? block.content
+                            : getDocumentContentById(currentVersionIndex)
+                        }
+                        isCurrentVersion={isCurrentVersion}
+                        currentVersionIndex={currentVersionIndex}
+                        suggestions={suggestions ?? []}
+                        status={block.status}
+                        saveContent={saveContent}
+                      />
+                    ) : block.kind === "text" ? (
+                      mode === "edit" ? (
+                        <Editor
+                          content={
+                            isCurrentVersion
+                              ? block.content
+                              : getDocumentContentById(currentVersionIndex)
+                          }
+                          isCurrentVersion={isCurrentVersion}
+                          currentVersionIndex={currentVersionIndex}
+                          status={block.status}
+                          saveContent={saveContent}
+                          suggestions={
+                            isCurrentVersion ? suggestions ?? [] : []
+                          }
+                        />
+                      ) : (
+                        <DiffView
+                          oldContent={getDocumentContentById(
+                            currentVersionIndex - 1
+                          )}
+                          newContent={getDocumentContentById(
+                            currentVersionIndex
+                          )}
+                        />
+                      )
+                    ) : block.kind === "spreadsheet" ? (
+                      <SpreadsheetEditor
+                        content={
+                          isCurrentVersion
+                            ? block.content
+                            : getDocumentContentById(currentVersionIndex)
+                        }
+                        isCurrentVersion={isCurrentVersion}
+                        currentVersionIndex={currentVersionIndex}
+                        status={block.status}
+                        saveContent={saveContent}
+                      />
+                    ) : null}
 
-                <div className="flex flex-row gap-2 relative items-end w-full px-4 pb-4">
+                    <AnimatePresence>
+                      {isCurrentVersion && (
+                        <Toolbar
+                          isToolbarVisible={isToolbarVisible}
+                          setIsToolbarVisible={setIsToolbarVisible}
+                          append={append}
+                          isLoading={isLoading}
+                          stop={stop}
+                          setMessages={setMessages}
+                          blockKind={block.kind}
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                <AnimatePresence>
+                  {!isCurrentVersion && (
+                    <VersionFooter
+                      currentVersionIndex={currentVersionIndex}
+                      documents={documents}
+                      handleVersionChange={handleVersionChange}
+                    />
+                  )}
+                </AnimatePresence>
+
+                <AnimatePresence>
+                  <Console
+                    consoleOutputs={consoleOutputs}
+                    setConsoleOutputs={setConsoleOutputs}
+                  />
+                </AnimatePresence>
+
+                <div className="flex flex-row gap-2 relative items-end w-full py-4 mt-auto">
                   <MultimodalInput
                     searchMode={searchMode}
                     setSearchMode={setSearchMode}
@@ -356,217 +485,211 @@ function PureBlock({
                     setMessages={setMessages}
                   />
                 </div>
-              </div>
-            </motion.div>
-          )}
+              </motion.div>
+            </>
+          ) : (
+            <ResizablePanelGroup direction="horizontal" className="h-dvh w-dvw">
+              <ResizablePanel defaultSize={35} minSize={20} maxSize={50}>
+                <div className="relative bg-muted dark:bg-background h-dvh flex flex-col justify-between items-center gap-4">
+                  <AnimatePresence>
+                    {!isCurrentVersion && (
+                      <motion.div
+                        className="left-0 absolute h-dvh w-full top-0 bg-zinc-900/50 z-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      />
+                    )}
+                  </AnimatePresence>
 
-          <motion.div
-            className="fixed dark:bg-muted bg-background h-dvh flex flex-col overflow-y-scroll border-l dark:border-zinc-700 border-zinc-200"
-            initial={
-              isMobile
-                ? {
-                    opacity: 1,
-                    x: block.boundingBox.left,
-                    y: block.boundingBox.top,
-                    height: block.boundingBox.height,
-                    width: block.boundingBox.width,
-                    borderRadius: 50,
-                  }
-                : {
-                    opacity: 1,
-                    x: block.boundingBox.left,
-                    y: block.boundingBox.top,
-                    height: block.boundingBox.height,
-                    width: block.boundingBox.width,
-                    borderRadius: 50,
-                  }
-            }
-            animate={
-              isMobile
-                ? {
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    height: windowHeight,
-                    width: windowWidth ? windowWidth : "calc(100dvw)",
-                    borderRadius: 0,
-                    transition: {
-                      delay: 0,
-                      type: "spring",
-                      stiffness: 200,
-                      damping: 30,
-                      duration: 5000,
-                    },
-                  }
-                : {
-                    opacity: 1,
-                    x: 400,
-                    y: 0,
-                    height: windowHeight,
-                    width: windowWidth
-                      ? windowWidth - 400
-                      : "calc(100dvw-400px)",
-                    borderRadius: 0,
-                    transition: {
-                      delay: 0,
-                      type: "spring",
-                      stiffness: 200,
-                      damping: 30,
-                      duration: 5000,
-                    },
-                  }
-            }
-            exit={{
-              opacity: 0,
-              scale: 0.5,
-              transition: {
-                delay: 0.1,
-                type: "spring",
-                stiffness: 600,
-                damping: 30,
-              },
-            }}
-          >
-            <div className="p-2 flex flex-row justify-between items-start">
-              <div className="flex flex-row gap-4 items-start">
-                <BlockCloseButton />
-
-                <div className="flex flex-col">
-                  <div className="font-medium">{block.title}</div>
-
-                  {isContentDirty ? (
-                    <div className="text-sm text-muted-foreground">
-                      Saving changes...
-                    </div>
-                  ) : document ? (
-                    <div className="text-sm text-muted-foreground">
-                      {`Updated ${formatDistance(
-                        new Date(document.createdAt),
-                        new Date(),
-                        {
-                          addSuffix: true,
-                        }
-                      )}`}
-                    </div>
-                  ) : (
-                    <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
-                  )}
-                </div>
-              </div>
-
-              <BlockActions
-                block={block}
-                currentVersionIndex={currentVersionIndex}
-                handleVersionChange={handleVersionChange}
-                isCurrentVersion={isCurrentVersion}
-                mode={mode}
-                setConsoleOutputs={setConsoleOutputs}
-              />
-            </div>
-
-            <div
-              className={cn(
-                "dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full pb-40 items-center",
-                {
-                  "py-2 px-2": block.kind === "code",
-                  "py-8 md:p-20 px-4": block.kind === "text",
-                  "w-full": block.kind === "spreadsheet",
-                }
-              )}
-            >
-              <div
-                className={cn("flex flex-row", {
-                  "": block.kind === "code",
-                  "mx-auto max-w-[600px]": block.kind === "text",
-                })}
-              >
-                {isDocumentsFetching && !block.content ? (
-                  <DocumentSkeleton />
-                ) : block.kind === "code" ? (
-                  <CodeEditor
-                    content={
-                      isCurrentVersion
-                        ? block.content
-                        : getDocumentContentById(currentVersionIndex)
-                    }
-                    isCurrentVersion={isCurrentVersion}
-                    currentVersionIndex={currentVersionIndex}
-                    suggestions={suggestions ?? []}
-                    status={block.status}
-                    saveContent={saveContent}
+                  <BlockMessages
+                    chatId={chatId}
+                    isLoading={isLoading}
+                    messages={messages}
+                    setMessages={setMessages}
+                    reload={reload}
+                    blockStatus={block.status}
                   />
-                ) : block.kind === "text" ? (
-                  mode === "edit" ? (
-                    <Editor
-                      content={
-                        isCurrentVersion
-                          ? block.content
-                          : getDocumentContentById(currentVersionIndex)
-                      }
-                      isCurrentVersion={isCurrentVersion}
-                      currentVersionIndex={currentVersionIndex}
-                      status={block.status}
-                      saveContent={saveContent}
-                      suggestions={isCurrentVersion ? suggestions ?? [] : []}
-                    />
-                  ) : (
-                    <DiffView
-                      oldContent={getDocumentContentById(
-                        currentVersionIndex - 1
-                      )}
-                      newContent={getDocumentContentById(currentVersionIndex)}
-                    />
-                  )
-                ) : block.kind === "spreadsheet" ? (
-                  <SpreadsheetEditor
-                    content={
-                      isCurrentVersion
-                        ? block.content
-                        : getDocumentContentById(currentVersionIndex)
-                    }
-                    isCurrentVersion={isCurrentVersion}
-                    currentVersionIndex={currentVersionIndex}
-                    status={block.status}
-                    saveContent={saveContent}
-                  />
-                ) : null}
-                {suggestions ? (
-                  <div className="md:hidden h-dvh w-12 shrink-0" />
-                ) : null}
 
-                <AnimatePresence>
-                  {isCurrentVersion && (
-                    <Toolbar
-                      isToolbarVisible={isToolbarVisible}
-                      setIsToolbarVisible={setIsToolbarVisible}
-                      append={append}
+                  <div className="flex flex-row gap-2 relative items-end w-full py-4">
+                    <MultimodalInput
+                      searchMode={searchMode}
+                      setSearchMode={setSearchMode}
+                      chatId={chatId}
+                      input={input}
+                      setInput={setInput}
+                      handleSubmit={handleSubmit}
                       isLoading={isLoading}
                       stop={stop}
+                      attachments={attachments}
+                      setAttachments={setAttachments}
+                      messages={messages}
+                      append={append}
+                      className="bg-background dark:bg-muted"
                       setMessages={setMessages}
-                      blockKind={block.kind}
                     />
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </ResizablePanel>
 
-            <AnimatePresence>
-              {!isCurrentVersion && (
-                <VersionFooter
-                  currentVersionIndex={currentVersionIndex}
-                  documents={documents}
-                  handleVersionChange={handleVersionChange}
-                />
-              )}
-            </AnimatePresence>
+              <ResizableHandle withHandle />
 
-            <AnimatePresence>
-              <Console
-                consoleOutputs={consoleOutputs}
-                setConsoleOutputs={setConsoleOutputs}
-              />
-            </AnimatePresence>
-          </motion.div>
+              <ResizablePanel defaultSize={75} minSize={30}>
+                <motion.div
+                  className="dark:bg-muted bg-background h-dvh flex flex-col overflow-y-scroll"
+                  exit={{
+                    opacity: 0,
+                    scale: 0.95,
+                    transition: {
+                      delay: 0.1,
+                      duration: 0.2,
+                    },
+                  }}
+                >
+                  <div className="p-2 flex flex-row justify-between items-start sticky top-0 bg-background/80 dark:bg-muted/80 backdrop-blur-sm z-10 border-b">
+                    <div className="flex flex-row gap-4 items-start">
+                      <BlockCloseButton />
+                      <div className="flex flex-col">
+                        <div className="font-medium">{block.title}</div>
+                        {isContentDirty ? (
+                          <div className="text-sm text-muted-foreground">
+                            Saving changes...
+                          </div>
+                        ) : document ? (
+                          <div className="text-sm text-muted-foreground">
+                            {`Updated ${formatDistance(
+                              new Date(document.createdAt),
+                              new Date(),
+                              { addSuffix: true }
+                            )}`}
+                          </div>
+                        ) : (
+                          <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
+                        )}
+                      </div>
+                    </div>
+                    <BlockActions
+                      block={block}
+                      currentVersionIndex={currentVersionIndex}
+                      handleVersionChange={handleVersionChange}
+                      isCurrentVersion={isCurrentVersion}
+                      mode={mode}
+                      setConsoleOutputs={setConsoleOutputs}
+                    />
+                  </div>
+
+                  <div
+                    className={cn(
+                      "flex-grow dark:bg-muted bg-background h-full overflow-y-auto !max-w-full pb-40",
+                      {
+                        "py-2 px-2": block.kind === "code",
+                        "py-8 md:p-20 px-4": block.kind === "text",
+                        "w-full": block.kind === "spreadsheet",
+                      }
+                    )}
+                  >
+                    <div
+                      className={cn("flex flex-row", {
+                        "w-full":
+                          block.kind === "code" || block.kind === "spreadsheet",
+                        "mx-auto max-w-[600px]": block.kind === "text",
+                      })}
+                    >
+                      {isDocumentsFetching && !block.content ? (
+                        <DocumentSkeleton />
+                      ) : block.kind === "code" ? (
+                        <div className="size-full">
+                          <CodeEditor
+                            content={
+                              isCurrentVersion
+                                ? block.content
+                                : getDocumentContentById(currentVersionIndex)
+                            }
+                            isCurrentVersion={isCurrentVersion}
+                            currentVersionIndex={currentVersionIndex}
+                            suggestions={suggestions ?? []}
+                            status={block.status}
+                            saveContent={saveContent}
+                          />
+                        </div>
+                      ) : block.kind === "text" ? (
+                        mode === "edit" ? (
+                          <Editor
+                            content={
+                              isCurrentVersion
+                                ? block.content
+                                : getDocumentContentById(currentVersionIndex)
+                            }
+                            isCurrentVersion={isCurrentVersion}
+                            currentVersionIndex={currentVersionIndex}
+                            status={block.status}
+                            saveContent={saveContent}
+                            suggestions={
+                              isCurrentVersion ? suggestions ?? [] : []
+                            }
+                          />
+                        ) : (
+                          <DiffView
+                            oldContent={getDocumentContentById(
+                              currentVersionIndex - 1
+                            )}
+                            newContent={getDocumentContentById(
+                              currentVersionIndex
+                            )}
+                          />
+                        )
+                      ) : block.kind === "spreadsheet" ? (
+                        <div className="size-full">
+                          <SpreadsheetEditor
+                            content={
+                              isCurrentVersion
+                                ? block.content
+                                : getDocumentContentById(currentVersionIndex)
+                            }
+                            isCurrentVersion={isCurrentVersion}
+                            currentVersionIndex={currentVersionIndex}
+                            status={block.status}
+                            saveContent={saveContent}
+                          />
+                        </div>
+                      ) : null}
+
+                      <AnimatePresence>
+                        {isCurrentVersion && (
+                          <Toolbar
+                            isToolbarVisible={isToolbarVisible}
+                            setIsToolbarVisible={setIsToolbarVisible}
+                            append={append}
+                            isLoading={isLoading}
+                            stop={stop}
+                            setMessages={setMessages}
+                            blockKind={block.kind}
+                          />
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+
+                  <AnimatePresence>
+                    {!isCurrentVersion && (
+                      <VersionFooter
+                        currentVersionIndex={currentVersionIndex}
+                        documents={documents}
+                        handleVersionChange={handleVersionChange}
+                      />
+                    )}
+                  </AnimatePresence>
+
+                  <AnimatePresence>
+                    <Console
+                      consoleOutputs={consoleOutputs}
+                      setConsoleOutputs={setConsoleOutputs}
+                    />
+                  </AnimatePresence>
+                </motion.div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          )}
         </motion.div>
       )}
     </AnimatePresence>
@@ -576,7 +699,7 @@ function PureBlock({
 export const Block = memo(PureBlock, (prevProps, nextProps) => {
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (prevProps.input !== nextProps.input) return false;
-  if (!equal(prevProps.messages, nextProps.messages.length)) return false;
+  if (!equal(prevProps.messages, nextProps.messages)) return false;
 
   return true;
 });

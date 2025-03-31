@@ -1,0 +1,13 @@
+flask==2.3.3
+requests==2.31.0
+sentence-transformers==2.2.2
+numpy==1.24.3
+langchain-community==0.0.10
+langchain==0.0.267
+pypdf==3.15.1
+pymupdf==1.22.5
+unstructured==0.10.30
+unstructured-inference==0.7.12
+beautifulsoup4==4.12.2
+markdown==3.4.4
+python-dotenv==1.0.0 

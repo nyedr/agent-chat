@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   createContext,
@@ -6,17 +6,17 @@ import {
   useReducer,
   ReactNode,
   useCallback,
-} from 'react';
+} from "react";
 
 interface ActivityItem {
   type:
-    | 'search'
-    | 'extract'
-    | 'analyze'
-    | 'reasoning'
-    | 'synthesis'
-    | 'thought';
-  status: 'pending' | 'complete' | 'error';
+    | "search"
+    | "extract"
+    | "analyze"
+    | "reasoning"
+    | "synthesis"
+    | "thought";
+  status: "pending" | "complete" | "error";
   message: string;
   timestamp: string;
   depth?: number;
@@ -39,24 +39,24 @@ interface DeepResearchState {
 }
 
 type DeepResearchAction =
-  | { type: 'TOGGLE_ACTIVE' }
-  | { type: 'SET_ACTIVE'; payload: boolean }
+  | { type: "TOGGLE_ACTIVE" }
+  | { type: "SET_ACTIVE"; payload: boolean }
   | {
-      type: 'ADD_ACTIVITY';
+      type: "ADD_ACTIVITY";
       payload: ActivityItem & { completedSteps?: number; totalSteps?: number };
     }
-  | { type: 'ADD_SOURCE'; payload: SourceItem }
-  | { type: 'SET_DEPTH'; payload: { current: number; max: number } }
-  | { type: 'INIT_PROGRESS'; payload: { maxDepth: number; totalSteps: number } }
-  | { type: 'UPDATE_PROGRESS'; payload: { completed: number; total: number } }
-  | { type: 'CLEAR_STATE' };
+  | { type: "ADD_SOURCE"; payload: SourceItem }
+  | { type: "SET_DEPTH"; payload: { current: number; max: number } }
+  | { type: "INIT_PROGRESS"; payload: { maxDepth: number; totalSteps: number } }
+  | { type: "UPDATE_PROGRESS"; payload: { completed: number; total: number } }
+  | { type: "CLEAR_STATE" };
 
 interface DeepResearchContextType {
   state: DeepResearchState;
   toggleActive: () => void;
   setActive: (active: boolean) => void;
   addActivity: (
-    activity: ActivityItem & { completedSteps?: number; totalSteps?: number },
+    activity: ActivityItem & { completedSteps?: number; totalSteps?: number }
   ) => void;
   addSource: (source: SourceItem) => void;
   setDepth: (current: number, max: number) => void;
@@ -77,10 +77,10 @@ const initialState: DeepResearchState = {
 
 function deepResearchReducer(
   state: DeepResearchState,
-  action: DeepResearchAction,
+  action: DeepResearchAction
 ): DeepResearchState {
   switch (action.type) {
-    case 'TOGGLE_ACTIVE':
+    case "TOGGLE_ACTIVE":
       return {
         ...state,
         isActive: !state.isActive,
@@ -92,7 +92,7 @@ function deepResearchReducer(
           totalExpectedSteps: 0,
         }),
       };
-    case 'SET_ACTIVE':
+    case "SET_ACTIVE":
       return {
         ...state,
         isActive: action.payload,
@@ -104,30 +104,30 @@ function deepResearchReducer(
           totalExpectedSteps: 0,
         }),
       };
-    case 'ADD_ACTIVITY':
+    case "ADD_ACTIVITY":
       return {
         ...state,
         activity: [...state.activity, action.payload],
         completedSteps:
           action.payload.completedSteps ??
-          (action.payload.status === 'complete'
+          (action.payload.status === "complete"
             ? state.completedSteps + 1
             : state.completedSteps),
         totalExpectedSteps:
           action.payload.totalSteps ?? state.totalExpectedSteps,
       };
-    case 'ADD_SOURCE':
+    case "ADD_SOURCE":
       return {
         ...state,
         sources: [...state.sources, action.payload],
       };
-    case 'SET_DEPTH':
+    case "SET_DEPTH":
       return {
         ...state,
         currentDepth: action.payload.current,
         maxDepth: action.payload.max,
       };
-    case 'INIT_PROGRESS':
+    case "INIT_PROGRESS":
       return {
         ...state,
         maxDepth: action.payload.maxDepth,
@@ -135,13 +135,13 @@ function deepResearchReducer(
         completedSteps: 0,
         currentDepth: 0,
       };
-    case 'UPDATE_PROGRESS':
+    case "UPDATE_PROGRESS":
       return {
         ...state,
         completedSteps: action.payload.completed,
         totalExpectedSteps: action.payload.total,
       };
-    case 'CLEAR_STATE':
+    case "CLEAR_STATE":
       return {
         ...initialState,
         activity: [],
@@ -156,47 +156,47 @@ function deepResearchReducer(
 }
 
 const DeepResearchContext = createContext<DeepResearchContextType | undefined>(
-  undefined,
+  undefined
 );
 
 export function DeepResearchProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(deepResearchReducer, initialState);
 
   const toggleActive = useCallback(() => {
-    dispatch({ type: 'TOGGLE_ACTIVE' });
+    dispatch({ type: "TOGGLE_ACTIVE" });
   }, []);
 
   const setActive = useCallback((active: boolean) => {
-    dispatch({ type: 'SET_ACTIVE', payload: active });
+    dispatch({ type: "SET_ACTIVE", payload: active });
   }, []);
 
   const addActivity = useCallback(
     (
-      activity: ActivityItem & { completedSteps?: number; totalSteps?: number },
+      activity: ActivityItem & { completedSteps?: number; totalSteps?: number }
     ) => {
-      dispatch({ type: 'ADD_ACTIVITY', payload: activity });
+      dispatch({ type: "ADD_ACTIVITY", payload: activity });
     },
-    [],
+    []
   );
 
   const addSource = useCallback((source: SourceItem) => {
-    dispatch({ type: 'ADD_SOURCE', payload: source });
+    dispatch({ type: "ADD_SOURCE", payload: source });
   }, []);
 
   const setDepth = useCallback((current: number, max: number) => {
-    dispatch({ type: 'SET_DEPTH', payload: { current, max } });
+    dispatch({ type: "SET_DEPTH", payload: { current, max } });
   }, []);
 
   const initProgress = useCallback((maxDepth: number, totalSteps: number) => {
-    dispatch({ type: 'INIT_PROGRESS', payload: { maxDepth, totalSteps } });
+    dispatch({ type: "INIT_PROGRESS", payload: { maxDepth, totalSteps } });
   }, []);
 
   const updateProgress = useCallback((completed: number, total: number) => {
-    dispatch({ type: 'UPDATE_PROGRESS', payload: { completed, total } });
+    dispatch({ type: "UPDATE_PROGRESS", payload: { completed, total } });
   }, []);
 
   const clearState = useCallback(() => {
-    dispatch({ type: 'CLEAR_STATE' });
+    dispatch({ type: "CLEAR_STATE" });
   }, []);
 
   return (
@@ -222,7 +222,7 @@ export function useDeepResearch() {
   const context = useContext(DeepResearchContext);
   if (context === undefined) {
     throw new Error(
-      'useDeepResearch must be used within a DeepResearchProvider',
+      "useDeepResearch must be used within a DeepResearchProvider"
     );
   }
   return context;

@@ -61,6 +61,27 @@ export interface ModelsApiResponse {
 export const DEFAULT_MODEL_NAME = process.env.NEXT_PUBLIC_DEFAULT_MODEL!;
 export const DEFAULT_REASONING_MODEL_NAME =
   process.env.NEXT_PUBLIC_DEFAULT_REASONING_MODEL!;
+export const DEFAULT_LIGHT_MODEL_NAME =
+  process.env.NEXT_PUBLIC_DEFAULT_LIGHT_MODEL!;
+
+export interface ModelsByCapability {
+  light: string;
+  reasoning: string;
+  default: string;
+}
+
+export const modelsByCapability: Record<string, ModelsByCapability> = {
+  deepResearch: {
+    default: DEFAULT_MODEL_NAME,
+    light: DEFAULT_LIGHT_MODEL_NAME,
+    reasoning: DEFAULT_REASONING_MODEL_NAME,
+  },
+  search: {
+    default: DEFAULT_MODEL_NAME,
+    light: DEFAULT_LIGHT_MODEL_NAME,
+    reasoning: DEFAULT_REASONING_MODEL_NAME,
+  },
+};
 
 /**
  * Creates a provider instance

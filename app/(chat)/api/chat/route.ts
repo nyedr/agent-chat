@@ -5,7 +5,7 @@ import {
   streamText,
 } from "ai";
 import { z } from "zod";
-import { myProvider } from "@/lib/ai/models";
+import { modelsByCapability, myProvider } from "@/lib/ai/models";
 import {
   createDocument,
   deepResearch,
@@ -171,7 +171,11 @@ export async function POST(request: Request) {
           search: searchTool({ app }),
           extract: extractTool({ app }),
           scrape: scrapeTool({ app }),
-          deepResearch: deepResearch({ dataStream, app, reasoningModelId }),
+          deepResearch: deepResearch({
+            dataStream,
+            app,
+            models: modelsByCapability.deepResearch,
+          }),
         },
         onFinish: async ({ response }) => {
           try {

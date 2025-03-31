@@ -569,6 +569,17 @@ export async function deleteDocumentsByChatId({ chatId }: { chatId: string }) {
   try {
     validateUUID(chatId);
     const db = await getDb();
+
+    const documents = db
+      .select()
+      .from(document)
+      .where(eq(document.chatId, chatId))
+      .all();
+
+    if (documents.length === 0) {
+      return { success: true };
+    }
+
     const result = db.delete(document).where(eq(document.chatId, chatId)).run();
 
     if (!result?.changes) {

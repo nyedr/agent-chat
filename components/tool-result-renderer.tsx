@@ -9,6 +9,7 @@ import { formatTimeMS, calculateProgressPercentage } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
 import { useDeepResearch } from "@/lib/deep-research-context";
+import Markdown from "./markdown";
 
 export const ToolResultRenderer = ({
   toolName,
@@ -101,13 +102,24 @@ export const ToolResultRenderer = ({
         <ScrapeResults url={args.url} data={result.data} isLoading={false} />
       );
     case "deepResearch":
-      return (
-        <div className="text-sm text-muted-foreground">
-          {result.success
-            ? "Research completed successfully."
-            : `Research may have failed: ${result.error}`}
-        </div>
-      );
+      if (result.success && result.data?.reportContent) {
+        return (
+          <div className="markdown-message-container flex flex-col max-w-[736px] w-full gap-2 prose prose-sm dark:prose-invert">
+            <Markdown
+              isUserMessage={false}
+              content={result.data.reportContent}
+            />
+          </div>
+        );
+      } else {
+        return (
+          <div className="text-sm text-muted-foreground">
+            {result.success
+              ? "Research completed, but no report content was found."
+              : `Research failed: ${result.error || "Unknown error"}`}
+          </div>
+        );
+      }
     case "createDocument":
       return (
         <DocumentPreview chatId={chatId} result={result} isReadonly={false} />
