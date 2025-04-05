@@ -9,10 +9,10 @@ import "./globals.css";
 import { ReactScan } from "@/components/scan";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://extract.chat"),
-  title: "Extract Chat - by Firecrawl",
+  metadataBase: new URL("https://agentchat.ai"),
+  title: "Agent Chat",
   description:
-    "Extract Chat allows you to extract information from any website with the help of an AI chatbot.",
+    "Agent Chat allows you to extract information from any website with the help of an AI chatbot.",
 };
 
 export const viewport = {

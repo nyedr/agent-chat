@@ -6,14 +6,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import { modelsByCapability, myProvider } from "@/lib/ai/models";
-import {
-  createDocument,
-  deepResearch,
-  searchTool,
-  updateDocument,
-  extractTool,
-  scrapeTool,
-} from "@/lib/ai/tools";
+import { createDocument, deepResearch, updateDocument } from "@/lib/ai/tools";
 
 import { systemPrompt } from "@/lib/ai/prompts";
 import {
@@ -33,32 +26,26 @@ import {
   sanitizeResponseMessages,
 } from "@/lib/utils";
 
-import FirecrawlApp from "@mendable/firecrawl-js";
+import { createSearchTools } from "@/lib/search/tools";
 
-type AllowedTools =
+export type AllowedTools =
   | "deepResearch"
   | "search"
-  | "extract"
-  | "scrape"
   | "createDocument"
-  | "updateDocument";
+  | "updateDocument"
+  | "imageSearch"
+  | "videoSearch";
 
-const deepResearchTools: AllowedTools[] = [
-  "search",
-  "extract",
-  "scrape",
-  "deepResearch",
-];
+const deepResearchTools: AllowedTools[] = ["deepResearch"];
 
 const allTools: AllowedTools[] = [
   ...deepResearchTools,
   "createDocument",
   "updateDocument",
+  "imageSearch",
+  "videoSearch",
+  "search",
 ];
-
-const app = new FirecrawlApp({
-  apiKey: process.env.FIRECRAWL_API_KEY || "",
-});
 
 export async function POST(request: Request) {
   const {
@@ -74,6 +61,9 @@ export async function POST(request: Request) {
     presencePenalty,
     frequencyPenalty,
     seed,
+
+    usePreScrapingRerank,
+    maxFinalResults,
   }: {
     chatId: string;
     messages: Array<Message>;
@@ -87,6 +77,8 @@ export async function POST(request: Request) {
     presencePenalty?: number;
     frequencyPenalty?: number;
     seed?: number;
+    usePreScrapingRerank?: boolean;
+    maxFinalResults?: number;
   } = await request.json();
 
   const userMessage = getMostRecentUserMessage(messages);
@@ -122,8 +114,10 @@ export async function POST(request: Request) {
     .with(-1, userMessage)
     .map(({ parts, ...rest }: any) => {
       return {
-        ...rest,
         content: getMessageContent(rest as Message),
+        role: rest.role,
+        id: rest.id,
+        experimental_attachments: rest.experimental_attachments,
       };
     }) satisfies Message[];
 
@@ -147,6 +141,12 @@ export async function POST(request: Request) {
         content: userMessage.id,
       });
 
+      const searchTools = createSearchTools({
+        dataStream,
+        usePreScrapingRerank,
+        maxFinalResults,
+      });
+
       const result = streamText({
         model: myProvider.chatModel(modelId),
         system: systemPrompt({
@@ -168,12 +168,11 @@ export async function POST(request: Request) {
           updateDocument: updateDocument({
             dataStream,
           }),
-          search: searchTool({ app }),
-          extract: extractTool({ app }),
-          scrape: scrapeTool({ app }),
+          search: searchTools.searchTool,
+          imageSearch: searchTools.imageSearchTool,
+          videoSearch: searchTools.videoSearchTool,
           deepResearch: deepResearch({
             dataStream,
-            app,
             models: modelsByCapability.deepResearch,
           }),
         },

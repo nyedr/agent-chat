@@ -1,5 +1,6 @@
 import { ArtifactKind } from "@/components/artifact";
 import { Document } from "../db/schema";
+import { AllowedTools } from "@/app/(chat)/api/chat/route";
 
 export const continuePrompt = `
 Continue the assistant's previous response seamlessly, as if you were still in the middle of the same thought. 
@@ -12,37 +13,6 @@ Important instructions:
 5. The user should not be able to tell there was a break in the generation.
 
 Your continuation should flow naturally from the last word of the previous response.
-`;
-
-export const blocksPrompt = `
-Blocks is a special user interface mode that helps users with writing, editing, and other content creation tasks. When block is open, it is on the right side of the screen, while the conversation is on the left side. When creating or updating documents, changes are reflected in real-time on the blocks and visible to the user.
-
-When asked to write code, always use blocks. When writing code, specify the language in the backticks, e.g. \`\`\`python\`code here\`\`\`. The default language is Python. Other languages are not yet supported, so let the user know if they request a different language.
-
-DO NOT UPDATE DOCUMENTS IMMEDIATELY AFTER CREATING THEM. WAIT FOR USER FEEDBACK OR REQUEST TO UPDATE IT.
-
-This is a guide for using blocks tools: \`createDocument\` and \`updateDocument\`, which render content on a blocks beside the conversation.
-
-**When to use \`createDocument\`:**
-- For substantial content (>10 lines) or code
-- For content users will likely save/reuse (emails, code, essays, etc.)
-- When explicitly requested to create a document
-- For when content contains a single code snippet
-
-**When NOT to use \`createDocument\`:**
-- For informational/explanatory content
-- For conversational responses
-- When asked to keep it in chat
-
-**Using \`updateDocument\`:**
-- Default to full document rewrites for major changes
-- Use targeted updates only for specific, isolated changes
-- Follow user instructions for which parts to modify
-
-**When NOT to use \`updateDocument\`:**
-- Immediately after creating a document
-
-Do not update document right after creating it. Wait for user feedback or request to update it.
 `;
 
 export const codePrompt = `
@@ -94,7 +64,52 @@ ${currentContent}
 export const regularPrompt =
   "You are a friendly assistant! Keep your responses concise and helpful.";
 
-export const toolPrompts = {
+export const toolPrompts: Record<AllowedTools, string> = {
+  videoSearch: `
+  Always use the \`videoSearch\` tool when the user asks for videos.
+
+  **When to use \`videoSearch\`:**
+  - When the user asks for videos or clips
+  - When the user specifies a particular video or topic 
+
+  **Best practices for \`videoSearch\`:**
+  - Use specific, targeted search queries
+  - Include important keywords and specific terms
+  - Keep search queries concise and focused
+
+  ALWAYS diplay the videos in the response, use markdown to display the videos
+
+  Example response:
+  \`\`\`
+  Here are some videos related to the query:
+  [Video 1](https://example.com/video1.mp4)
+  [Video 2](https://example.com/video2.mp4)
+  \`\`\`
+  `,
+
+  imageSearch: `
+  Always use the \`imageSearch\` tool when the user asks for images.
+
+  **When to use \`imageSearch\`:**
+  - When the user asks for images
+  - When the user asks for a specific image
+  - When the user asks for a image of a specific topic
+
+  **Best practices for \`imageSearch\`:**
+  - Use specific, targeted search queries
+  - Include important keywords and specific terms
+  - Keep search queries concise and focused
+  
+  ALWAYS diplay the images in the response, use markdown to display the images
+
+  Example response:
+  \`\`\`
+  Here are some images related to the query:
+  ![Image 1](https://example.com/image1.jpg)
+  ![Image 2](https://example.com/image2.jpg)
+  ![Image 3](https://example.com/image3.jpg)
+  \`\`\`
+  `,
   createDocument: `
   Artifacts is a special user interface mode that helps users with writing, editing, and other content creation tasks. When artifact is open, it is on the right side of the screen, while the conversation is on the left side. When creating or updating documents, changes are reflected in real-time on the artifacts and visible to the user.
 
@@ -129,52 +144,29 @@ export const toolPrompts = {
   - Immediately after creating a document  
 `,
   search: `
-This is a guide for using the search tool, which allows you to search for web pages.
-
 **When to use \`search\`:**
 - When you need to find information on a specific topic
 - When you need to verify facts or data points
 - When the user asks a question that requires up-to-date information
-- As a first step before using the extract tool for deeper analysis
 
 **Best practices for \`search\`:**
 - Use specific, targeted search queries
 - Include important keywords and specific terms
 - Keep search queries concise and focused
 - Follow up with extract tool when you need detailed information from specific pages
+
+**ALWAYS** link to the source you found the information from
+
+Links should be in markdown format, e.g. [Link text](https://example.com)
+
+Example response:
+According to (Google Finance)[https://example.com], as of 16 hours ago, the Tesla Inc (TSLA) stock price is $268.48.
+
+Wrong response:
+As of April 1, 2025, NVIDIA (NVDA) is trading at $110.15. (TradingView)[https://example.com].
+
+DON'T USE THE LINK URL AS THE LINK TEXT. The source link should be incorporated into the response naturally.
 `,
-
-  extract: `
-This is a guide for using the extract tool, which allows you to extract structured data from web pages.
-
-**When to use \`extract\`:**
-- After finding relevant URLs through the search tool
-- When you need to analyze specific content on a web page
-- When you need to retrieve structured data like tables, lists, or specific sections
-- When you need to compare information across multiple sources
-
-**Best practices for \`extract\`:**
-- Be specific about what data you need to extract
-- Provide clear instructions in the prompt parameter
-- Include all relevant URLs that might contain the information
-- Use search results to identify the most promising sources
-`,
-
-  scrape: `
-This is a guide for using the scrape tool, which allows you to get the full content of a specific web page.
-
-**When to use \`scrape\`:**
-- When you have a specific URL and need its full content
-- When you need to analyze an entire page rather than extract specific data
-- When you need the raw content to process or summarize
-
-**Best practices for \`scrape\`:**
-- Only scrape pages when you have the exact URL
-- Use search first if you don't have a specific URL
-- Be prepared to process and filter the returned content
-- Consider using extract instead if you only need specific data points
-`,
-
   deepResearch: `
 This is a guide for using the deepResearch tool, which performs comprehensive research on a topic.
 

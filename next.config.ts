@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
     ppr: true,
   },
   images: {
-    domains: ["api.microlink.io"],
+    domains: ["api.microlink.io", "www.google.com"],
     remotePatterns: [
       {
         hostname: "avatar.vercel.sh",

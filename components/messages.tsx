@@ -1,6 +1,6 @@
 import type { Message } from "ai";
 import type { ChatRequestOptions } from "@/lib/types";
-import { PreviewMessage, ThinkingMessage } from "./message";
+import { PreviewMessage } from "./message";
 import { useScrollToBottom } from "./use-scroll-to-bottom";
 import { memo } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 interface MessagesProps {
   chatId: string;
   isLoading: boolean;
-  messages: Array<Message>;
+  messages: Message[];
   setMessages: (
     messages: Message[] | ((messages: Message[]) => Message[])
   ) => void;

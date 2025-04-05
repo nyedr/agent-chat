@@ -1,17 +1,15 @@
 import { DataStreamWriter, tool } from "ai";
-import FirecrawlApp from "@mendable/firecrawl-js";
 import { z } from "zod";
 import { ModelsByCapability, myProvider } from "../ai/models";
 
 import { ResearchOrchestrator, ResearchResult } from "./research-orchestrator";
-import { WorkflowConfig } from "./types";
+import { WorkflowConfig, ResearchOptions } from "./types";
 
 /**
  * Props for creating a deep research tool
  */
 interface DeepResearchToolProps {
   dataStream: DataStreamWriter;
-  app: FirecrawlApp;
   models: ModelsByCapability;
 }
 
@@ -34,20 +32,22 @@ export interface DeepResearchToolResult {
  * Adapter to convert the new modular deep research system into a tool
  * compatible with the existing system.
  */
-export const deepResearch = ({
-  dataStream,
-  app,
-  models,
-}: DeepResearchToolProps) =>
+export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
   tool({
     description: "Search the web for information",
     parameters: z.object({
       topic: z.string().describe("The topic or question to research"),
       maxDepth: z.number().optional().describe("The maximum depth of research"),
+      extract_top_k_chunks: z
+        .number()
+        .optional()
+        .default(5)
+        .describe("Number of relevant chunks to extract per source"),
     }),
     execute: async ({
       topic,
       maxDepth = 7,
+      extract_top_k_chunks = 5,
     }): Promise<DeepResearchToolResult> => {
       try {
         // Create configuration
@@ -58,12 +58,17 @@ export const deepResearch = ({
           concurrencyLimit: 3,
         };
 
-        // Create research orchestrator
+        // Define ResearchOptions
+        const options: ResearchOptions = {
+          extract_top_k_chunks,
+        };
+
+        // Create research orchestrator with options
         const orchestrator = new ResearchOrchestrator(
-          app,
           myProvider,
           models,
-          dataStream
+          dataStream,
+          options
         );
 
         // Run the research
@@ -76,10 +81,9 @@ export const deepResearch = ({
         // Use the finalReport as the main content
         const reportContent = result.finalReport;
 
-        // Estimate steps based on metrics
-        const completedSteps =
-          Math.max(result.metrics.iterationsCompleted, 1) * 5; // Ensure at least 5 steps if iterations = 0
-        const totalSteps = Math.max(maxDepth * 5, completedSteps); // Ensure total is at least completed
+        // Use the actual step counts returned from the orchestrator
+        const completedSteps = result.completedSteps;
+        const totalSteps = result.totalSteps;
 
         return {
           success: true,

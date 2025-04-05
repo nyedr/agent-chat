@@ -1,25 +1,16 @@
-from flask import Flask, request, jsonify
+import os
 import requests
 import tempfile
-import os
 import logging
 from urllib.parse import urlparse, urlunparse
+
 from langchain_community.document_loaders import (
     PyMuPDFLoader, TextLoader, UnstructuredWordDocumentLoader,
     UnstructuredPowerPointLoader, UnstructuredExcelLoader,
     UnstructuredMarkdownLoader, BSHTMLLoader
 )
-import numpy as np
-from sentence_transformers import SentenceTransformer
 
-# Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-# ============== DOCUMENT CONVERSION FUNCTIONALITY ==============
 
 # Map extensions to loaders
 LOADER_MAP = {
@@ -38,12 +29,10 @@ LOADER_MAP = {
 }
 
 
-@app.route('/api/python/convert-document', methods=['GET'])
-def convert_document():
+def convert_document_from_url(url):
     """Convert document from URL to text"""
-    url = request.args.get('url')
     if not url:
-        return jsonify({"error": "URL parameter is required"}), 400
+        return {"error": "URL parameter is required"}, 400
 
     temp_file_path = None
     try:
@@ -73,9 +62,9 @@ def convert_document():
             extension = mime_map.get(content_type)
 
         if not extension:
-            return jsonify({
+            return {
                 "error": f"Could not determine file type for URL: {url}"
-            }), 400
+            }, 400
 
         logger.info(f"Determined file extension: {extension}")
 
@@ -109,7 +98,7 @@ def convert_document():
             except Exception as init_error:
                 logger.error(
                     f"Failed to initialize loader {loader_class.__name__} for {url}: {str(init_error)}")
-                return jsonify({"error": f"Failed to initialize document loader for file type {extension}"}), 500
+                return {"error": f"Failed to initialize document loader for file type {extension}"}, 500
 
         # 3. Load and Extract Document Content
         docs = []
@@ -148,7 +137,7 @@ def convert_document():
             f"Finished processing document. Extracted {len(content)} characters.")
 
         # 5. Return Result
-        return jsonify({
+        return {
             "text": content,  # Could be empty
             "title": title,
             "metadata": {
@@ -157,14 +146,14 @@ def convert_document():
                 "page_count": len(docs) if docs else 0,
                 "content_type": response.headers.get('Content-Type'),
             }
-        })
+        }
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Failed to download URL {url}: {str(e)}")
-        return jsonify({"error": f"Failed to download URL {url}: {str(e)}"}), 500
+        return {"error": f"Failed to download URL {url}: {str(e)}"}, 500
     except Exception as e:
         logger.error(f"Failed to process document from {url}: {str(e)}")
-        return jsonify({"error": f"Failed to process document from {url}: {str(e)}"}), 500
+        return {"error": f"Failed to process document from {url}: {str(e)}"}, 500
     finally:
         # Clean up temp file (remains the same)
         if temp_file_path and os.path.exists(temp_file_path):
@@ -174,107 +163,3 @@ def convert_document():
             except Exception as e:
                 logger.warning(
                     f"Failed to remove temporary file {temp_file_path}: {str(e)}")
-
-
-# ============== EMBEDDING FUNCTIONALITY ==============
-
-# Load embedding model
-model_name = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-logger.info(f"Loading embedding model: {model_name}")
-
-try:
-    embedding_model = SentenceTransformer(model_name)
-    logger.info(f"Model loaded successfully: {model_name}")
-    model_dimensions = embedding_model.get_sentence_embedding_dimension()
-    logger.info(f"Model dimensions: {model_dimensions}")
-except Exception as e:
-    logger.error(f"Error loading model: {str(e)}")
-    # Create a dummy model for development if the real model fails to load
-
-    class DummyModel:
-        def __init__(self):
-            self.dimension = 384  # Typical dimension for smaller models
-
-        def encode(self, texts, **kwargs):
-            # Return random vectors for development purposes
-            return np.random.randn(len(texts), self.dimension)
-
-        def get_sentence_embedding_dimension(self):
-            return self.dimension
-
-    embedding_model = DummyModel()
-    logger.warning("Using dummy embedding model for development")
-    model_dimensions = embedding_model.get_sentence_embedding_dimension()
-
-
-@app.route('/api/python/embed', methods=['POST'])
-def get_embeddings():
-    """Generate embeddings for a list of texts"""
-    try:
-        data = request.get_json()
-
-        if not data or 'texts' not in data or not isinstance(data['texts'], list):
-            return jsonify({
-                "error": "Request body must be JSON with a 'texts' array."
-            }), 400
-
-        texts = data['texts']
-        logger.info(f"Generating embeddings for {len(texts)} texts")
-
-        if not texts:
-            return jsonify({"embeddings": []})
-
-        # Generate embeddings
-        try:
-            # Convert embeddings to list format for JSON serialization
-            embeddings = embedding_model.encode(texts).tolist()
-
-            logger.info(f"Successfully generated {len(embeddings)} embeddings")
-
-            return jsonify({
-                "embeddings": embeddings,
-                "model": model_name,
-                "dimensions": model_dimensions,
-                "count": len(embeddings)
-            })
-        except Exception as e:
-            logger.error(f"Error generating embeddings: {str(e)}")
-            return jsonify({
-                "error": f"Failed to generate embeddings: {str(e)}"
-            }), 500
-
-    except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
-        return jsonify({"error": f"Error processing request: {str(e)}"}), 500
-
-
-# ============== SERVER CONFIGURATION ==============
-
-# Root route with server info
-@app.route('/', methods=['GET'])
-def index():
-    """Root endpoint to provide information about the server"""
-    return jsonify({
-        "server": "Deep Research Python Services",
-        "version": "1.0.0",
-        "endpoints": {
-            "document_conversion": "/api/python/convert-document",
-            "embeddings": "/api/python/embed"
-        },
-        "status": "online",
-        "embedding_model": model_name,
-        "embedding_dimensions": model_dimensions
-    })
-
-
-# For local development
-if __name__ == '__main__':
-    # Use a single port (default 5328)
-    port = int(os.environ.get("PORT", 5328))
-    logger.info(
-        f"Starting combined Deep Research Python server on port {port}")
-    logger.info(
-        f"- Document conversion endpoint: http://localhost:{port}/api/python/convert-document")
-    logger.info(
-        f"- Embedding endpoint: http://localhost:{port}/api/python/embed")
-    app.run(host='0.0.0.0', port=port)

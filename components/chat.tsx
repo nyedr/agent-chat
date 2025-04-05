@@ -2,7 +2,7 @@
 
 import type { Attachment, Message } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { useState } from "react";
+import { Dispatch, SetStateAction, useState } from "react";
 import { useSWRConfig } from "swr";
 import { toast } from "sonner";
 import { useLocalStorage } from "usehooks-ts";
@@ -15,6 +15,8 @@ import { Messages } from "./messages";
 import { useChatContext } from "@/lib/chat/chat-context";
 import { generateUUID } from "@/lib/utils";
 import { LLMSettings } from "./settings-dialog";
+import { DeepResearch } from "./deep-research";
+import { useDeepResearch } from "@/lib/deep-research-context";
 
 const SETTINGS_STORAGE_KEY = "llmSettings";
 
@@ -89,6 +91,8 @@ export function Chat({
     },
   });
 
+  const { state: deepResearchState } = useDeepResearch();
+
   const isLoading = status === "submitted" || status === "streaming";
 
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
@@ -97,12 +101,16 @@ export function Chat({
     setSearchMode(mode);
   };
 
+  const messagesAsMessage = messages as Message[];
+  const setMessagesAsMessage = setMessages as Dispatch<
+    SetStateAction<Message[]>
+  >;
+
   return (
     <>
       <div className="flex relative flex-col min-w-0 h-dvh bg-background">
         <ChatHeader
           selectedModelId={selectedModelId}
-          selectedReasoningModelId={selectedReasoningModelId}
           settings={settings}
           onSettingsChange={handleSettingsChange}
         />
@@ -117,8 +125,8 @@ export function Chat({
           <Messages
             chatId={id}
             isLoading={isLoading}
-            messages={messages}
-            setMessages={setMessages}
+            messages={messages as Message[]}
+            setMessages={setMessages as Dispatch<SetStateAction<Message[]>>}
             reload={reload}
           />
         </div>
@@ -133,14 +141,22 @@ export function Chat({
             stop={stop}
             attachments={attachments}
             setAttachments={setAttachments}
-            messages={messages}
-            setMessages={setMessages}
+            messages={messagesAsMessage}
+            setMessages={setMessagesAsMessage}
             append={append}
             searchMode={searchMode}
             setSearchMode={handleSearchModeChange}
           />
         </div>
       </div>
+
+      {deepResearchState.isResearchInfoOpen && (
+        <DeepResearch
+          isActive={searchMode === "deep-research"}
+          activity={deepResearchState.activity}
+          sources={deepResearchState.sources}
+        />
+      )}
 
       <Block
         chatId={id}
@@ -152,8 +168,8 @@ export function Chat({
         attachments={attachments}
         setAttachments={setAttachments}
         append={append}
-        messages={messages}
-        setMessages={setMessages}
+        messages={messagesAsMessage}
+        setMessages={setMessagesAsMessage}
         reload={reload}
         searchMode={searchMode}
         setSearchMode={setSearchMode}

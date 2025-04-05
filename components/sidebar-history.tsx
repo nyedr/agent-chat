@@ -416,8 +416,6 @@ export function SidebarHistory() {
     dedupingInterval: 2000,
   });
 
-  console.log("Chat data response", response);
-
   const {
     data: foldersResponse = { data: [], error: null, status: 200 },
     mutate: mutateFolders,

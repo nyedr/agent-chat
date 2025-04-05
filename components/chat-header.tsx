@@ -11,18 +11,16 @@ import { memo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { SquarePen } from "lucide-react";
 import { useDeepResearch } from "@/lib/deep-research-context";
-import { LLMSettings, SettingsDialog } from "./settings-dialog";
+import { LLMSettings, SettingsCredenza } from "./settings-dialog";
 
 interface ChatHeaderProps {
   selectedModelId: string;
-  selectedReasoningModelId: string;
   settings?: LLMSettings;
   onSettingsChange?: (settings: LLMSettings) => void;
 }
 
 function PureChatHeader({
   selectedModelId,
-  selectedReasoningModelId,
   settings = {},
   onSettingsChange = () => {},
 }: ChatHeaderProps) {
@@ -64,14 +62,8 @@ function PureChatHeader({
         label="Router Model"
       />
 
-      <ModelSelector
-        selectedModelId={selectedReasoningModelId}
-        className="order-2 md:order-3"
-        label="Reasoning Model"
-      />
-
       <div className="ml-auto order-3 md:order-4">
-        <SettingsDialog
+        <SettingsCredenza
           settings={settings}
           onSettingsChange={onSettingsChange}
         />

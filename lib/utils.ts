@@ -351,105 +351,6 @@ export function extractSearchSources(messageParts: any[] | undefined): Array<{
 }
 
 /**
- * Processes deep research updates from message parts
- */
-export function processDeepResearchUpdates(
-  messageParts: any[] | undefined,
-  callbacks: {
-    addActivity: (activity: any) => void;
-    addSource: (source: any) => void;
-    initProgress: (maxDepth: number, totalSteps: number) => void;
-    setDepth: (current: number, max: number) => void;
-    updateProgress: (completed: number, total: number) => void;
-  }
-): void {
-  if (!messageParts) return;
-
-  messageParts.forEach((part) => {
-    try {
-      if (
-        part.type === "tool-invocation" &&
-        part.toolInvocation.toolName === "deepResearch"
-      ) {
-        const toolInvocation = part.toolInvocation;
-
-        // Handle progress initialization
-        if (
-          "delta" in toolInvocation &&
-          toolInvocation.delta &&
-          (toolInvocation.delta as any).type === "progress-init"
-        ) {
-          const { maxDepth, totalSteps } = (toolInvocation.delta as any)
-            .content;
-          callbacks.initProgress(maxDepth, totalSteps);
-        }
-
-        // Handle depth updates
-        if (
-          "delta" in toolInvocation &&
-          toolInvocation.delta &&
-          (toolInvocation.delta as any).type === "depth-delta"
-        ) {
-          const { current, max } = (toolInvocation.delta as any).content;
-          callbacks.setDepth(current, max);
-        }
-
-        // Handle activity updates
-        if (
-          "delta" in toolInvocation &&
-          toolInvocation.delta &&
-          (toolInvocation.delta as any).type === "activity-delta"
-        ) {
-          const activity = (toolInvocation.delta as any).content;
-          callbacks.addActivity(activity);
-
-          if (
-            activity.completedSteps !== undefined &&
-            activity.totalSteps !== undefined
-          ) {
-            callbacks.updateProgress(
-              activity.completedSteps,
-              activity.totalSteps
-            );
-          }
-        }
-
-        // Handle source updates
-        if (
-          "delta" in toolInvocation &&
-          toolInvocation.delta &&
-          (toolInvocation.delta as any).type === "source-delta"
-        ) {
-          callbacks.addSource((toolInvocation.delta as any).content);
-        }
-
-        // Handle final result
-        if (
-          toolInvocation.state === "result" &&
-          toolInvocation.result?.success
-        ) {
-          const { completedSteps, totalSteps } = toolInvocation.result.data;
-          if (completedSteps !== undefined && totalSteps !== undefined) {
-            callbacks.updateProgress(completedSteps, totalSteps);
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Error processing deep research update:", error);
-    }
-  });
-}
-
-/**
- * Formats time in minutes:seconds
- */
-export function formatTimeMS(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.floor((ms % 60000) / 1000);
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-/**
  * Calculates progress percentage
  */
 export function calculateProgressPercentage(
@@ -458,6 +359,16 @@ export function calculateProgressPercentage(
 ): number {
   if (total === 0) return 0;
   return Math.min((completed / total) * 100, 100);
+}
+
+/**
+ * Formats milliseconds into MM:SS format
+ */
+export function formatTime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 /**

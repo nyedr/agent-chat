@@ -1,15 +1,16 @@
 import { SearchResults } from "./search-results";
-import { ExtractResults } from "./extract-results";
-import { ScrapeResults } from "./scrape-results";
 
 import { DocumentToolCall, DocumentToolResult } from "./document";
 import { DocumentPreview } from "./document-preview";
-import { Progress } from "@radix-ui/react-progress";
-import { formatTimeMS, calculateProgressPercentage } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 
 import { useDeepResearch } from "@/lib/deep-research-context";
-import Markdown from "./markdown";
+import { ToolCall } from "./tool-call";
+import { SearchResultItem, SearchToolResponse } from "@/lib/search/types";
+import { Progress } from "./ui/progress";
+import { motion } from "framer-motion";
+import { DeepResearchResult } from "./deep-research-result";
+import { calculateProgressPercentage, formatTime } from "@/lib/utils";
 
 export const ToolResultRenderer = ({
   toolName,
@@ -28,26 +29,15 @@ export const ToolResultRenderer = ({
   isLoading: boolean;
   chatId: string;
 }) => {
+  console.log("tool info", toolName, args, result, isLoading, chatId, state);
+
   // Handle loading states
   if (state !== "result" || isLoading) {
     switch (toolName) {
-      case "extract":
-        return <ExtractResults results={[]} isLoading={true} />;
-      case "scrape":
-        return <ScrapeResults url={args.url} data="" isLoading={true} />;
       case "search":
         return <SearchResults results={[]} isLoading={true} />;
       case "deepResearch":
-        return (
-          <DeepResearchProgress
-            state={state}
-            activity={
-              state === "streaming" && (args as any)?.delta?.activity
-                ? [...((args as any).delta.activity || [])]
-                : []
-            }
-          />
-        );
+        return <DeepResearchProgress state={state} />;
       case "createDocument":
         return (
           <DocumentPreview chatId={chatId} isReadonly={false} args={args} />
@@ -65,52 +55,43 @@ export const ToolResultRenderer = ({
           />
         );
       default:
-        return null;
+        return <ToolCall type="loading" args={args} toolName={toolName} />;
     }
   }
 
   // Handle results
   switch (toolName) {
     case "search":
-      return (
-        <SearchResults
-          results={result.data.map((item: any) => ({
-            title: item.title,
-            url: item.url,
-            description: item.description,
-            source: new URL(item.url).hostname,
-            favicon: item.favicon,
-          }))}
-        />
-      );
-    case "extract":
-      return (
-        <ExtractResults
-          results={
-            Array.isArray(result.data)
-              ? result.data.map((item: any) => ({
-                  url: item.url,
-                  data: item.data,
-                }))
-              : { url: args.urls[0], data: result.data }
-          }
-          isLoading={false}
-        />
-      );
-    case "scrape":
-      return (
-        <ScrapeResults url={args.url} data={result.data} isLoading={false} />
-      );
-    case "deepResearch":
-      if (result.success && result.data?.reportContent) {
+      try {
+        // Get search results data from the response with proper typing
+        const searchData = (result as SearchToolResponse).data;
+
         return (
-          <div className="markdown-message-container flex flex-col max-w-[736px] w-full gap-2 prose prose-sm dark:prose-invert">
-            <Markdown
-              isUserMessage={false}
-              content={result.data.reportContent}
-            />
+          <SearchResults
+            results={searchData.map(
+              (item) =>
+                ({
+                  title: item.title || "Untitled",
+                  url: item.url || "#",
+                  description: item.description || "",
+                  source: item.source || "Unknown",
+                  favicon: item.favicon,
+                  publishedDate: item.publishedDate,
+                } as SearchResultItem)
+            )}
+          />
+        );
+      } catch (error) {
+        console.warn("Error displaying search results:", error);
+        return (
+          <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
+            Search completed, but results couldn&apos;t be displayed.
           </div>
         );
+      }
+    case "deepResearch":
+      if (result.success && result.data?.reportContent) {
+        return <DeepResearchResult data={result.data} />;
       } else {
         return (
           <div className="text-sm text-muted-foreground">
@@ -137,56 +118,20 @@ export const ToolResultRenderer = ({
         />
       );
     default:
-      return null;
+      return (
+        <ToolCall
+          type="complete"
+          args={args}
+          result={result}
+          toolName={toolName}
+        />
+      );
   }
 };
 
-const DeepResearchProgress = ({
-  state,
-  activity,
-}: {
-  state: string;
-  activity: Array<{
-    type: string;
-    status: string;
-    message: string;
-    timestamp: string;
-    depth?: number;
-    completedSteps?: number;
-    totalSteps?: number;
-  }>;
-}) => {
+const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
   const { state: deepResearchState } = useDeepResearch();
-  const [lastActivity, setLastActivity] = useState<string>("");
-  const [startTime] = useState<number>(Date.now());
-  const maxDuration = 5 * 60 * 1000; // 5 minutes in milliseconds
-  const [currentTime, setCurrentTime] = useState(Date.now());
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    if (activity && activity.length > 0) {
-      const lastItem = activity[activity.length - 1];
-      setLastActivity(lastItem.message);
-
-      // Update progress from activity if available
-      if (
-        lastItem.completedSteps !== undefined &&
-        lastItem.totalSteps !== undefined
-      ) {
-        deepResearchState.completedSteps = lastItem.completedSteps;
-        deepResearchState.totalExpectedSteps = lastItem.totalSteps;
-      }
-    }
-  }, [activity, deepResearchState]);
-
-  // Calculate overall progress
   const progress = useMemo(
     () =>
       calculateProgressPercentage(
@@ -196,54 +141,64 @@ const DeepResearchProgress = ({
     [deepResearchState.completedSteps, deepResearchState.totalExpectedSteps]
   );
 
-  // Calculate time progress
-  const timeProgress = useMemo(() => {
-    const elapsed = currentTime - startTime;
-    return Math.min((elapsed / maxDuration) * 100, 100);
-  }, [currentTime, startTime, maxDuration]);
+  const [startTime] = useState<number>(Date.now());
+  const maxDuration = 5 * 60 * 1000; // 5 minutes
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
-  // Get current phase
-  const currentPhase = useMemo(() => {
-    if (!activity.length) return "";
-    const current = activity[activity.length - 1];
-    switch (current.type) {
-      case "search":
-        return "Searching";
-      case "extract":
-        return "Extracting";
-      case "analyze":
-        return "Analyzing";
-      case "synthesis":
-        return "Synthesizing";
-      default:
-        return "Researching";
-    }
-  }, [activity]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  const timeUntilTimeout = Math.max(maxDuration - (currentTime - startTime), 0);
+  const elapsed = useMemo(
+    () => Math.min(currentTime - startTime, maxDuration),
+    [currentTime, startTime, maxDuration]
+  );
+  const formattedTimeElapsed = formatTime(elapsed);
+  const formattedMaxDuration = formatTime(maxDuration);
+
+  const currentActivity =
+    deepResearchState.activity.length > 0
+      ? deepResearchState.activity[deepResearchState.activity.length - 1]
+          .message
+      : "Initializing research...";
 
   return (
-    <div className="w-full space-y-2">
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <div className="flex flex-col gap-1">
-          <span>Research in progress...</span>
-          Depth: {deepResearchState.currentDepth}/{deepResearchState.maxDepth}
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <span>{Math.round(progress)}%</span>
-          <span className="text-xs">
-            Step {deepResearchState.completedSteps}/
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="w-full space-y-4 rounded-xl border bg-card p-5 text-card-foreground shadow-md"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-sm text-foreground">
+          Research in progress...
+        </span>
+        <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+          <span>
+            Depth: {deepResearchState.currentDepth}/{deepResearchState.maxDepth}
+          </span>
+          <span>•</span>
+          <span>
+            Step: {deepResearchState.completedSteps}/
             {deepResearchState.totalExpectedSteps}
           </span>
         </div>
       </div>
-      <Progress value={progress} className="w-full" />
-      <div className="flex items-center justify-end text-xs text-muted-foreground mt-2">
-        <span>Time until timeout: {formatTimeMS(timeUntilTimeout)}</span>
-        <span>{Math.round(timeProgress)}% of max time used</span>
+
+      <Progress max={100} value={progress} className="w-full h-2" />
+
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          Time Elapsed: {formattedTimeElapsed} / {formattedMaxDuration}
+        </span>
       </div>
-      <Progress value={timeProgress} className="w-full" />
-      <div className="text-xs text-muted-foreground">{lastActivity}</div>
-    </div>
+
+      <div className="border-t border-border/70 pt-2 text-xs text-muted-foreground">
+        <span className="font-medium">Current Step:</span> {currentActivity}
+      </div>
+    </motion.div>
   );
 };

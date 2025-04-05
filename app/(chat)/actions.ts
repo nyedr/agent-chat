@@ -11,6 +11,12 @@ import {
 import { getDb } from "@/lib/db/init";
 import { chat, Document, document, folder, suggestion } from "@/lib/db/schema";
 import { Message } from "ai";
+import {
+  ScrapeProcessResponse,
+  ScrapeResult,
+  RerankResponse,
+  RerankedDocument,
+} from "@/lib/search/types";
 
 export async function saveChat({
   id,
@@ -824,5 +830,223 @@ export async function addChatMessage({
   } catch (error) {
     console.error("Failed to add chat message:", error);
     throw error;
+  }
+}
+
+const PYTHON_SERVER_URL =
+  process.env.PYTHON_SERVER_URL ?? "http://localhost:5328";
+
+// ============== EMBEDDING FUNCTIONALITY ==============
+
+const PYTHON_EMBED_URL = PYTHON_SERVER_URL + "/api/python/embed";
+
+/**
+ * Fetches embeddings for a list of texts from the Python backend.
+ * @param texts - An array of strings to embed.
+ * @returns A promise that resolves to an array of embedding vectors (number[][]).
+ */
+export async function getEmbeddingsFromPython(
+  texts: string[]
+): Promise<number[][]> {
+  if (!texts || texts.length === 0) {
+    return [];
+  }
+
+  console.log(
+    `[ACTION] Requesting embeddings for ${texts.length} texts from Python server: ${PYTHON_EMBED_URL}`
+  );
+
+  try {
+    const response = await fetch(PYTHON_EMBED_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ texts }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(
+        `Python embedding server error (${response.status}): ${errorBody}`
+      );
+      throw new Error(
+        `Failed to get embeddings from Python server: ${response.statusText}`
+      );
+    }
+
+    const result = await response.json();
+
+    if (!result || !Array.isArray(result.embeddings)) {
+      console.error(
+        "Invalid response format from Python embedding server:",
+        result
+      );
+      throw new Error("Invalid response format from Python embedding server.");
+    }
+
+    console.log(
+      `[ACTION] Received ${result.embeddings.length} embeddings from Python server.`
+    );
+    return result.embeddings;
+  } catch (error) {
+    console.error("Error calling Python embedding server:", error);
+    // Re-throw the error to be handled by the caller
+    throw error;
+  }
+}
+
+// ============== SCRAPING & PROCESSING FUNCTIONALITY ==============
+
+const PYTHON_SCRAPE_URL = PYTHON_SERVER_URL + "/api/python/scrape-process";
+
+/**
+ * Fetches processed content for a list of URLs from the Python backend.
+ */
+export async function scrapeAndProcessUrls(
+  urls: string[],
+  query?: string,
+  extractTopKChunks?: number,
+  crawlingStrategy?: "http" | "playwright"
+): Promise<ScrapeProcessResponse> {
+  if (!urls || urls.length === 0) {
+    return { results: [] };
+  }
+
+  console.log(
+    `[ACTION] Requesting scrape/process for ${
+      urls.length
+    } URLs from Python: ${PYTHON_SCRAPE_URL} (Strategy: ${
+      crawlingStrategy || "http (default)"
+    })`
+  );
+
+  const payload: any = { urls };
+  if (query) payload.query = query;
+  if (extractTopKChunks) payload.extract_top_k_chunks = extractTopKChunks;
+  if (crawlingStrategy) payload.crawling_strategy = crawlingStrategy;
+
+  try {
+    const response = await fetch(PYTHON_SCRAPE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(
+        `Python scrape/process server error (${response.status}): ${errorBody}`
+      );
+      // Return success=false for all URLs in case of server error
+      const errorResults: ScrapeResult[] = urls.map((url) => ({
+        url,
+        success: false,
+        error: `Python server error: ${response.status} ${response.statusText}`,
+        title: null,
+        publishedDate: null,
+        raw_content: null,
+        quality_score: 0,
+        processed_content: null,
+        relevant_chunks: null,
+      }));
+      return { results: errorResults };
+    }
+
+    const result: ScrapeProcessResponse = await response.json();
+
+    if (!result || !Array.isArray(result.results)) {
+      console.error(
+        "Invalid response format from Python scrape/process server:",
+        result
+      );
+      throw new Error(
+        "Invalid response format from Python scrape/process server."
+      );
+    }
+
+    console.log(
+      `[ACTION] Received ${result.results.length} processed scrape results from Python.`
+    );
+    return result;
+  } catch (error) {
+    console.error("Error calling Python scrape/process server:", error);
+    // Return success=false for all URLs in case of network or other errors
+    const errorResults: ScrapeResult[] = urls.map((url) => ({
+      url,
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unknown error during scrape/process call",
+      title: null,
+      publishedDate: null,
+      raw_content: null,
+      quality_score: 0,
+      processed_content: null,
+      relevant_chunks: null,
+    }));
+    return { results: errorResults };
+  }
+}
+
+// ============== RERANKING FUNCTIONALITY ==============
+
+const PYTHON_RERANK_URL = PYTHON_SERVER_URL + "/api/python/rerank";
+
+/**
+ * Reranks documents using the Python backend.
+ */
+export async function rerankDocuments(
+  query: string,
+  documents: { id: string; text: string }[],
+  topK: number
+): Promise<RerankResponse> {
+  if (!query || !documents || documents.length === 0) {
+    return { reranked_documents: [] };
+  }
+
+  console.log(
+    `[ACTION] Requesting rerank for ${documents.length} documents from Python: ${PYTHON_RERANK_URL}`
+  );
+
+  try {
+    const response = await fetch(PYTHON_RERANK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, documents, top_k: topK }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(
+        `Python rerank server error (${response.status}): ${errorBody}`
+      );
+      throw new Error(
+        `Failed to rerank documents via Python server: ${response.statusText}`
+      );
+    }
+
+    const result: RerankResponse = await response.json();
+
+    if (!result || !Array.isArray(result.reranked_documents)) {
+      console.error(
+        "Invalid response format from Python rerank server:",
+        result
+      );
+      throw new Error("Invalid response format from Python rerank server.");
+    }
+
+    console.log(
+      `[ACTION] Received ${result.reranked_documents.length} reranked documents from Python.`
+    );
+    return result;
+  } catch (error) {
+    console.error("Error calling Python rerank server:", error);
+    throw error; // Re-throw to be handled by caller
   }
 }

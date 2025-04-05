@@ -24,8 +24,6 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { SuggestedActions } from "./suggested-actions";
 import equal from "fast-deep-equal";
-import { useDeepResearch } from "@/lib/deep-research-context";
-import { DeepResearch } from "./deep-research";
 import { Telescope } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
 
@@ -72,7 +70,6 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
-  const { state: deepResearchState } = useDeepResearch();
 
   const adjustHeight = () => {
     if (textareaRef.current) {
@@ -190,7 +187,7 @@ function PureMultimodalInput({
     formData.append("file", file);
 
     try {
-      const response = await fetch("/api/files/upload", {
+      const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       });
@@ -285,16 +282,6 @@ function PureMultimodalInput({
                 </div>
               )}
             </div>
-
-            {searchMode === "deep-research" && (
-              <DeepResearch
-                isActive={searchMode === "deep-research"}
-                onToggle={() => {}}
-                isLoading={isLoading}
-                activity={deepResearchState.activity}
-                sources={deepResearchState.sources}
-              />
-            )}
 
             <div className="group relative flex w-full items-center">
               <div className="w-full">

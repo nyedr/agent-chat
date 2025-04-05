@@ -9,12 +9,7 @@ import Markdown from "./markdown";
 import { MessageActions } from "./message-actions";
 import { PreviewAttachment } from "./preview-attachment";
 import equal from "fast-deep-equal";
-import {
-  cn,
-  extractSearchSources,
-  getMessageContent,
-  processDeepResearchUpdates,
-} from "@/lib/utils";
+import { cn, extractSearchSources, getMessageContent } from "@/lib/utils";
 import { MessageEditor } from "./message-editor";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import AnimatedGradientText from "./ui/gradient-text";
@@ -116,8 +111,7 @@ const PurePreviewMessage = ({
   ) => Promise<string | null | undefined>;
 }) => {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const { addActivity, addSource, initProgress, setDepth, updateProgress } =
-    useDeepResearch();
+  const { addSource } = useDeepResearch();
 
   const deleteMessage = useCallback(
     async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -139,7 +133,7 @@ const PurePreviewMessage = ({
     [message.id, setMessages, chatId]
   );
 
-  // Track sources from search and extract results
+  // Track sources from search results (this seems specific to standard search, keep for now)
   const [searchSources, setSearchSources] = useState<
     Array<{
       title: string;
@@ -150,30 +144,11 @@ const PurePreviewMessage = ({
     }>
   >([]);
 
-  // Process search sources
   useEffect(() => {
     const sources = extractSearchSources(message.parts);
     setSearchSources(sources);
     sources.forEach((source) => addSource(source));
   }, [message.parts, addSource]);
-
-  // Process deep research updates
-  useEffect(() => {
-    processDeepResearchUpdates(message.parts, {
-      addActivity,
-      addSource,
-      initProgress,
-      setDepth,
-      updateProgress,
-    });
-  }, [
-    message.parts,
-    addActivity,
-    addSource,
-    initProgress,
-    setDepth,
-    updateProgress,
-  ]);
 
   return (
     <AnimatePresence>

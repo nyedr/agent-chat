@@ -4,34 +4,53 @@ channels:
   - conda-forge
 dependencies:
   - python=3.11
-  - pip>=23.0
-  - conda-forge::antlr4-python3-runtime # Keep this
-  - conda-forge::numpy=1.24.3
+  - pip>=2.0
+
+  # Conda-managed dependencies
+  - conda-forge::antlr4-python3-runtime
+  - conda-forge::numpy
+  - conda-forge::nltk
+  - conda-forge::scikit-learn
+  - conda-forge::scipy
   - pip:
-      # PyTorch for CUDA 11.8
+      # Brotli for HTTP decompression
+      - Brotli
+      # PyTorch for CUDA (Ensure version matches your CUDA install)
+      # Check https://pytorch.org/ for specific command if needed
       - --extra-index-url https://download.pytorch.org/whl/cu118
       - torch
       - torchaudio
       - torchvision
 
-      # Core Flask and Web
+      # Core Flask and Web (Keep pinned for stability)
       - flask==2.3.3
       - requests==2.31.0
 
-      # Embeddings
-      - sentence-transformers==2.2.2
+      # Embeddings & Reranking (Unpin sentence-transformers)
+      - sentence-transformers
+      - transformers
+      - einops
+      # Optional: For Flash Attention speedup on compatible GPUs
+      # - ninja
+      # - flash-attn --no-build-isolation
 
-      # Document Loading (Dependencies might be handled by conda install now)
-      - pypdf==3.15.1
-      - pymupdf==1.22.5
-      - unstructured==0.10.30
-      - unstructured-inference==0.7.12
-      - beautifulsoup4==4.12.2
-      - markdown==3.4.4
+      # Document Loading & Scraping (Including crawl4ai deps)
+      - pypdf
+      - pymupdf
+      - unstructured
+      - unstructured-inference
+      - beautifulsoup4
+      - markdown
+      - crawl4ai
+      - playwright
+      - huggingface_hub
+      - wikipedia-api
+      - fasttext-wheel
 
       # Utilities
       - python-dotenv==1.0.0
 
       # Langchain
-      - langchain-community==0.0.10
-      - langchain==0.1.0
+      - langchain-community
+      - langchain
+      - langchain-text-splitters

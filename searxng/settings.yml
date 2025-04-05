@@ -1,0 +1,140 @@
+use_default_settings: true
+
+general:
+  instance_name: "searxng"
+
+search:
+  autocomplete: "google"
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "a2fb23f1b02e6ee83875b09826990de0f6bd908b6638e8c10277d415f6ab852b" # Is overwritten by ${SEARXNG_SECRET}
+
+engines:
+  - name: wolframalpha
+    disabled: false
+
+# Plugin configuration, for more details see
+#   https://docs.searxng.org/admin/settings/settings_plugins.html
+#
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: true
+
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: true
+
+  searx.plugins.self_info.SXNGPlugin:
+    active: true
+
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: true
+
+  searx.plugins.ahmia_filter.SXNGPlugin:
+    active: true
+
+  searx.plugins.hostnames.SXNGPlugin:
+    active: true
+
+  searx.plugins.oa_doi_rewrite.SXNGPlugin:
+    active: false
+
+  searx.plugins.tor_check.SXNGPlugin:
+    active: false
+
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: false
+
+hostnames:
+  replace:
+    # Redirect Twitter (and X) links to nitter for a privacy‐focused view.
+    '(www\\.)?twitter\\.com$': "nitter.net"
+    '(www\\.)?x\\.com$': "nitter.net"
+
+  high_priority:
+    # Authoritative knowledge sources & scholarly sites.
+    - '(.*\\.)?wikipedia\\.org$'
+    - '(.*\\.)?arxiv\\.org$'
+    - '(.*\\.)?core\\.ac\\.uk$'
+    - '(.*\\.)?pubmed\\.nih\\.gov$'
+    # Trusted tech and developer communities.
+    - 'developer\\.mozilla\\.org$'
+    - '(.*\\.)?stackoverflow\\.com$'
+    - '(.*\\.)?github\\.com$'
+    - '(.*\\.)?gitlab\\.com$'
+    # Official and reputable organizations.
+    - '(.*\\.)?python\\.org$'
+    - '(.*\\.)?microsoft\\.com$'
+    - '(.*\\.)?nih\\.gov$'
+    - '(.*\\.)?apple\\.com$'
+    - '(.*\\.)?mayoclinic\\.org$'
+    # Quality news and media for research context.
+    - '(.*\\.)?nytimes\\.com$'
+    - '(.*\\.)?theguardian\\.com$'
+    - '(.*\\.)?nhs\\.uk$'
+    # Additional specialized or trusted domains.
+    - '(.*\\.)?imdb\\.com$'
+    - '(.*\\.)?letterboxd\\.com$'
+    - '(.*\\.)?goodreads\\.com$'
+    - '(.*\\.)?reddit\\.com$'
+    - '(.*\\.)?ycombinator\\.com$'
+    - '(.*\\.)?rust-lang\\.org$'
+    - '(.*\\.)?cppreference\\.com$'
+    - '(.*\\.)?archlinux\\.org$'
+    - '(.*\\.)?wiktionary\\.org$'
+    - '(.*\\.)?steampowered\\.com$'
+    - '(.*\\.)?rtings\\.com$'
+    - '(.*\\.)?themoviedb\\.org$'
+    - '(.*\\.)?css-tricks\\.com$'
+    - '(.*\\.)?metacritic\\.com$'
+    - '(.*\\.)?serverfault\\.com$'
+    - '(.*\\.)?anilist\\.co$'
+    - '(.*\\.)?superuser\\.com$'
+    - '(.*\\.)?genius\\.com$'
+    - '(.*\\.)?merriam-webster\\.com$'
+    - '(.*\\.)?terraform\\.io$'
+
+  low_priority:
+    # Sites that may contain useful data but are less authoritative.
+    - '(.*\\.)?quora\\.com$'
+    - '(.*\\.)?w3schools\\.com$'
+    - '(.*\\.)?linkedin\\.com$'
+    - '(.*\\.)?msn\\.com$'
+    - '(.*\\.)?geeksforgeeks\\.org$'
+    - '(.*\\.)?alternativeto\\.net$'
+    - '(.*\\.)?wikihow\\.com$'
+    - '(.*\\.)?answers\\.microsoft\\.com$'
+    - '(.*\\.)?githubplus\\.com$'
+    - '(.*\\.)?9to5answer\\.com$'
+    - '(.*\\.)?play\\.google\\.com$'
+    - '(.*\\.)?makeuseof\\.com$'
+    - '(.*\\.)?etsy\\.com$'
+    - '(.*\\.)?sourceforge\\.net$'
+    - '(.*\\.)?freecodecamp\\.org$'
+    - '(.*\\.)?towardsdatascience\\.com$'
+    - '(.*\\.)?solveforum\\.com$'
+    - '(.*\\.)?fandom\\.com$'
+    - '(.*\\.)?codegrepper\\.com$'
+    - '(.*\\.)?giters\\.com$'
+    - '(.*\\.)?thehackernews\\.com$'
+    - '(.*\\.)?ign\\.com$'
+
+  remove:
+    # Block domains that are known to be low-quality, biased, or spammy.
+    - '(.*\\.)?pinterest\\.com$'
+    - '(.*\\.)?foxnews\\.com$'
+    - '(.*\\.)?tiktok\\.com$'
+    - '(.*\\.)?breitbart\\.com$'
+    - '(.*\\.)?facebook\\.com$'
+    - '(.*\\.)?dailymail\\.co\\.uk$'
+    - '(.*\\.)?instagram\\.com$'
+    - '(.*\\.)?appsloveworld\\.com$'
+    - '(.*\\.)?libhunt\\.com$'
+    - '(.*\\.)?healthline\\.com$'
+    - '(.*\\.)?nypost\\.com$'
+    - '(.*\\.)?blog\\.csdn\\.net$'
+    - '(.*\\.)?washingtonpost\\.com$'
+    - '(.*\\.)?lightrun\\.com$'
+    - 'apps\\.apple\\.com$'

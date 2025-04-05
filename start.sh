@@ -6,7 +6,7 @@ pnpm run db:migrate
 
 # Start the Python server in the background
 echo "Starting Python services server..."
-python app/\(chat\)/api/python/combined_server.py &
+python app/\(chat\)/api/python/server.py &
 PYTHON_PID=$!
 
 # Wait a moment for the Python server to initialize

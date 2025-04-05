@@ -36,6 +36,7 @@ interface DeepResearchState {
   maxDepth: number;
   completedSteps: number;
   totalExpectedSteps: number;
+  isResearchInfoOpen: boolean;
 }
 
 type DeepResearchAction =
@@ -49,7 +50,8 @@ type DeepResearchAction =
   | { type: "SET_DEPTH"; payload: { current: number; max: number } }
   | { type: "INIT_PROGRESS"; payload: { maxDepth: number; totalSteps: number } }
   | { type: "UPDATE_PROGRESS"; payload: { completed: number; total: number } }
-  | { type: "CLEAR_STATE" };
+  | { type: "CLEAR_STATE" }
+  | { type: "TOGGLE_INFO"; payload: boolean };
 
 interface DeepResearchContextType {
   state: DeepResearchState;
@@ -63,6 +65,7 @@ interface DeepResearchContextType {
   initProgress: (maxDepth: number, totalSteps: number) => void;
   updateProgress: (completed: number, total: number) => void;
   clearState: () => void;
+  toggleInfo: () => void;
 }
 
 const initialState: DeepResearchState = {
@@ -73,6 +76,7 @@ const initialState: DeepResearchState = {
   maxDepth: 7,
   completedSteps: 0,
   totalExpectedSteps: 0,
+  isResearchInfoOpen: false,
 };
 
 function deepResearchReducer(
@@ -122,6 +126,18 @@ function deepResearchReducer(
         sources: [...state.sources, action.payload],
       };
     case "SET_DEPTH":
+      console.log(
+        "[Reducer] Handling SET_DEPTH. Current state depth:",
+        state.currentDepth,
+        "Payload:",
+        action.payload
+      );
+      if (
+        state.currentDepth === action.payload.current &&
+        state.maxDepth === action.payload.max
+      ) {
+        return state;
+      }
       return {
         ...state,
         currentDepth: action.payload.current,
@@ -150,6 +166,11 @@ function deepResearchReducer(
         completedSteps: 0,
         totalExpectedSteps: 0,
       };
+    case "TOGGLE_INFO":
+      return {
+        ...state,
+        isResearchInfoOpen: action.payload,
+      };
     default:
       return state;
   }
@@ -165,6 +186,10 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
   const toggleActive = useCallback(() => {
     dispatch({ type: "TOGGLE_ACTIVE" });
   }, []);
+
+  const toggleInfo = useCallback(() => {
+    dispatch({ type: "TOGGLE_INFO", payload: !state.isResearchInfoOpen });
+  }, [state.isResearchInfoOpen]);
 
   const setActive = useCallback((active: boolean) => {
     dispatch({ type: "SET_ACTIVE", payload: active });
@@ -184,6 +209,10 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setDepth = useCallback((current: number, max: number) => {
+    console.log("[DeepResearchContext] Dispatching SET_DEPTH:", {
+      current,
+      max,
+    });
     dispatch({ type: "SET_DEPTH", payload: { current, max } });
   }, []);
 
@@ -211,6 +240,7 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
         initProgress,
         updateProgress,
         clearState,
+        toggleInfo,
       }}
     >
       {children}

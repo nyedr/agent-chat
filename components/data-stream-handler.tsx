@@ -1,12 +1,12 @@
 "use client";
 
-import { useChat } from "ai/react";
 import { useEffect, useRef } from "react";
 import { BlockKind } from "./block";
-import { Suggestion } from "@/lib/db/schema";
 import { initialBlockData, useBlock } from "@/hooks/use-block";
 import { useDeepResearch } from "@/lib/deep-research-context";
+import { useChat } from "@ai-sdk/react";
 
+// Expanded type to include all expected custom data payloads
 export type DataStreamDelta = {
   type:
     | "text-delta"
@@ -19,35 +19,25 @@ export type DataStreamDelta = {
     | "finish"
     | "user-message-id"
     | "kind"
-    | "activity-delta"
-    | "source-delta";
-  content:
-    | string
-    | Suggestion
-    | {
-        type:
-          | "search"
-          | "extract"
-          | "analyze"
-          | "reasoning"
-          | "synthesis"
-          | "thought";
-        status: "pending" | "complete" | "error";
-        message: string;
-        timestamp: string;
-      }
-    | {
-        url: string;
-        title: string;
-        relevance: number;
-      };
+    // Deep Research specific types
+    | "progress-init"
+    | "depth-delta"
+    | "activity-delta" // May contain steps
+    | "activity" // Handle potential variation
+    | "source-delta"
+    | "warning" // Handle potential warning type
+    | "complete" // Backend sends this on success
+    | "error"; // Backend sends this on error
+  content: any; // Use 'any' for simplicity, parse based on type
 };
 
 export function DataStreamHandler({ id }: { id: string }) {
   const { data: dataStream } = useChat({ id });
   const { setBlock } = useBlock();
-  const { addActivity, addSource } = useDeepResearch();
+  const { addActivity, addSource, initProgress, setDepth, updateProgress } =
+    useDeepResearch();
   const lastProcessedIndex = useRef(-1);
+  const researchCompleted = useRef(false);
 
   useEffect(() => {
     if (!dataStream?.length) return;
@@ -56,10 +46,97 @@ export function DataStreamHandler({ id }: { id: string }) {
     lastProcessedIndex.current = dataStream.length - 1;
 
     (newDeltas as DataStreamDelta[]).forEach((delta: DataStreamDelta) => {
-      if (delta.type === "user-message-id") {
+      console.log("[DataStreamHandler] Processing delta:", delta); // Log every delta
+
+      // Stop processing deep research deltas if completion signal received
+      if (
+        researchCompleted.current &&
+        [
+          "progress-init",
+          "depth-delta",
+          "activity-delta",
+          "activity",
+          "source-delta",
+          "warning",
+          "complete",
+          "error",
+        ].includes(delta.type)
+      ) {
+        console.log(
+          "[DataStreamHandler] Ignoring deep research delta after completion:",
+          delta.type
+        );
         return;
       }
 
+      // --- Handle Deep Research Updates ---
+      if (delta.type === "progress-init") {
+        const { maxDepth, totalSteps } = delta.content;
+        console.log("[DataStreamHandler] Handling progress-init:", {
+          maxDepth,
+          totalSteps,
+        });
+        initProgress(maxDepth, totalSteps);
+        researchCompleted.current = false; // Reset completion flag on new init
+        return; // Handled, exit early
+      }
+      if (delta.type === "depth-delta") {
+        const { current, max } = delta.content;
+        console.log("[DataStreamHandler] Handling depth-delta:", {
+          current,
+          max,
+        });
+        setDepth(current, max);
+        return; // Handled, exit early
+      }
+      if (delta.type === "activity-delta" || delta.type === "activity") {
+        const activity = delta.content; // content should match ActivityItem + optional steps
+        console.log(`[DataStreamHandler] Handling ${delta.type}:`, activity);
+        addActivity(activity);
+        // Check for step updates within the activity payload
+        if (
+          activity.completedSteps !== undefined &&
+          activity.totalSteps !== undefined
+        ) {
+          console.log("[DataStreamHandler] Updating progress from activity:", {
+            completed: activity.completedSteps,
+            total: activity.totalSteps,
+          });
+          updateProgress(activity.completedSteps, activity.totalSteps);
+        }
+        return; // Handled, exit early
+      }
+      if (delta.type === "source-delta") {
+        const source = delta.content; // content should match SourceItem
+        console.log("[DataStreamHandler] Handling source-delta:", source);
+        addSource(source);
+        return; // Handled, exit early
+      }
+      if (delta.type === "warning") {
+        console.warn(
+          "[DataStreamHandler] Received warning delta:",
+          delta.content
+        );
+        // Optionally display warning to user or log it
+        return; // Handled (by logging/warning), exit early
+      }
+      // Handle completion/error signals from the deep research stream
+      if (delta.type === "complete" || delta.type === "error") {
+        console.log(
+          `[DataStreamHandler] Received final deep research signal: ${delta.type}`
+        );
+        researchCompleted.current = true; // Set completion flag
+        // The main tool result handling in message.tsx should take over now.
+        return;
+      }
+
+      // --- Handle Block Context Updates (Original Logic) ---
+      if (delta.type === "user-message-id") {
+        // This likely relates to message sync, not block or research state
+        return;
+      }
+
+      // Only update block if it's not a deep research type handled above
       setBlock((draftBlock) => {
         if (!draftBlock) {
           return { ...initialBlockData, status: "streaming" };
@@ -133,37 +210,24 @@ export function DataStreamHandler({ id }: { id: string }) {
               status: "idle",
             };
 
-          case "activity-delta":
-            const activity = delta.content as {
-              type: "search" | "extract" | "analyze" | "thought" | "reasoning";
-              status: "pending" | "complete" | "error";
-              message: string;
-              timestamp: string;
-            };
-            addActivity(activity);
-            return {
-              ...draftBlock,
-              status: "streaming",
-            };
-
-          case "source-delta":
-            const source = delta.content as {
-              url: string;
-              title: string;
-              relevance: number;
-            };
-            addSource(source);
-            return {
-              ...draftBlock,
-              status: "streaming",
-            };
-
           default:
+            console.warn(
+              "[DataStreamHandler] Unhandled delta type for block update:",
+              delta.type
+            );
             return draftBlock;
         }
       });
     });
-  }, [dataStream, setBlock, addActivity, addSource]);
+  }, [
+    dataStream,
+    setBlock,
+    addActivity,
+    addSource,
+    initProgress,
+    setDepth,
+    updateProgress,
+  ]);
 
   return null;
 }

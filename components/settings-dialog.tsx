@@ -3,14 +3,14 @@
 import { useState, useEffect } from "react";
 import { Info, Settings } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Credenza,
+  CredenzaTrigger,
+  CredenzaContent,
+  CredenzaDescription,
+  CredenzaHeader,
+  CredenzaTitle,
+  CredenzaFooter,
+} from "@/components/ui/credanza";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,15 +43,15 @@ const DEFAULT_SETTINGS: Required<LLMSettings> = {
   seed: undefined as unknown as number,
 };
 
-interface SettingsDialogProps {
+interface SettingsCredenzaProps {
   settings: LLMSettings;
   onSettingsChange: (settings: LLMSettings) => void;
 }
 
-export function SettingsDialog({
+export function SettingsCredenza({
   settings,
   onSettingsChange,
-}: SettingsDialogProps) {
+}: SettingsCredenzaProps) {
   // Initialize local settings with merged defaults and current settings
   const [localSettings, setLocalSettings] = useState<LLMSettings>({
     ...DEFAULT_SETTINGS,
@@ -111,29 +111,29 @@ export function SettingsDialog({
       : DEFAULT_SETTINGS[key];
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Credenza open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <DialogTrigger asChild>
+          <CredenzaTrigger asChild>
             <Button variant="outline" size="sm">
               <Settings className="size-5 md:mr-2" />
               <span className="sr-only md:not-sr-only">Settings</span>
             </Button>
-          </DialogTrigger>
+          </CredenzaTrigger>
         </TooltipTrigger>
         <TooltipContent className="block md:hidden">Settings</TooltipContent>
       </Tooltip>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center text-xl">
+      <CredenzaContent className="sm:max-w-[500px] max-w-full">
+        <CredenzaHeader>
+          <CredenzaTitle className="flex items-center text-xl">
             <Settings className="mr-2 size-5" />
             Model Settings
-          </DialogTitle>
-          <DialogDescription>
+          </CredenzaTitle>
+          <CredenzaDescription>
             Fine-tune language model parameters to customize generation
             behavior.
-          </DialogDescription>
-        </DialogHeader>
+          </CredenzaDescription>
+        </CredenzaHeader>
         <Separator className="my-2" />
         <div className="grid gap-6 py-4">
           {/* Temperature */}
@@ -405,15 +405,15 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <DialogFooter className="flex justify-between">
+        <CredenzaFooter className="flex justify-between">
           <Button variant="outline" onClick={handleReset}>
             Reset to Default
           </Button>
           <Button type="submit" onClick={handleSave}>
             Apply Settings
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </CredenzaFooter>
+      </CredenzaContent>
+    </Credenza>
   );
 }

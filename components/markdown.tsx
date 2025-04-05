@@ -150,8 +150,8 @@ export default function ChatMarkdown({
           src={src}
           alt={alt}
           borderless={true}
-          wrapperClassName="my-0 w-full max-w-3xl box-shadow-none"
-          objectFit="contain"
+          wrapperClassName="w-full max-w-3xl box-shadow-none"
+          objectFit="cover"
           className="my-0"
         />
       ),
