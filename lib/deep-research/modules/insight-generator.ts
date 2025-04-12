@@ -1,7 +1,7 @@
 import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
-import { generateText } from "ai";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { VectorStoreManager } from "./vector-store-manager";
-import cosineSimilarity from "compute-cosine-similarity";
 
 /**
  * Interface for a learning with source citation
@@ -21,6 +21,40 @@ export interface InsightResult {
   analysis: string;
   followUpQuestions: string[];
 }
+
+const LearningSchema = z.object({
+  text: z
+    .string()
+    .describe(
+      "Insightful learning including implications/critique/comparison etc."
+    ),
+  source: z
+    .string()
+    .describe(
+      "The specific Source *URL* from the context snippet the learning was derived from."
+    ),
+});
+
+const InsightResultSchema = z.object({
+  answer: z
+    .string()
+    .describe(
+      "Comprehensive, nuanced answer to the sub-query based *only* on the provided context."
+    ),
+  learnings: z
+    .array(LearningSchema)
+    .describe("Array of key learning objects extracted from the context."),
+  analysis: z
+    .string()
+    .describe(
+      "In-depth analysis of connections, contradictions, gaps, or methodological considerations found *within* the provided context snippets."
+    ),
+  followUpQuestions: z
+    .array(z.string())
+    .describe(
+      "List of 2-3 specific, critical follow-up questions stemming from the analysis of the context."
+    ),
+});
 
 /**
  * Module for generating insights from research context.
@@ -93,50 +127,64 @@ export class InsightGeneratorModule {
         specificQuery = originalQuery;
       }
 
-      // Create the initial prompt
+      const temperature = 0.5;
+
       const initialPrompt = this.createInsightPrompt(
         context,
         specificQuery,
         originalQuery
       );
 
-      // 1. Generate initial insights
-      const initialResult = await generateText({
+      const { object: initialResult } = await generateObject({
         model: this.llmProvider.chatModel(this.modelId),
+        schema: InsightResultSchema,
         prompt: initialPrompt,
+        temperature: temperature,
       });
 
-      // 2. Parse initial response
-      const parsedResult = this.parseInsightResponse(
-        initialResult.text,
-        specificQuery
-      );
-      const initialLearnings = parsedResult.learnings;
+      const initialLearnings = initialResult.learnings;
 
       if (initialLearnings.length <= 1) {
-        // No need to refine if 0 or 1 learning
-        return parsedResult;
+        return initialResult;
       }
 
-      // --- 3. Synthesis/Refinement Layer ---
-      console.log(
-        `Synthesizing ${initialLearnings.length} initial learnings...`
-      );
-      const refinedLearnings = await this.synthesizeLearnings(initialLearnings);
-      console.log(
-        `Refined down to ${refinedLearnings.length} synthesized learnings.`
-      );
+      // --- Populate titles from metadata ---
+      // Create a quick lookup map from the context chunks provided to the LLM
+      const metadataMap = new Map<string, { title?: string }>();
+      if (this.vectorStoreManager) {
+        // Ensure we have the source of context
+        const relevantChunks = await this.vectorStoreManager.search(
+          specificQuery,
+          10
+        );
+        relevantChunks.forEach((chunk) => {
+          if (chunk.metadata?.url && typeof chunk.metadata.url === "string") {
+            metadataMap.set(chunk.metadata.url, {
+              title: chunk.metadata.title,
+            });
+          }
+        });
+      }
 
-      // Return the result with refined learnings
+      // Map to the internal Learning interface, populating title from metadata
+      const mappedLearnings: Learning[] = initialResult.learnings.map((l) => {
+        const metadata = metadataMap.get(l.source);
+        return {
+          text: l.text,
+          source: l.source,
+          title:
+            typeof metadata?.title === "string" ? metadata.title : undefined,
+        };
+      });
+
+      // --- Return Result (No Synthesis) ---
       return {
-        ...parsedResult,
-        learnings: refinedLearnings,
+        ...initialResult,
+        learnings: mappedLearnings,
       };
-      // --- End Synthesis/Refinement Layer ---
     } catch (error) {
       console.error("Error generating insights:", error);
 
-      // Return a minimal result in case of error
       return {
         answer: `Error analyzing research for "${specificQuery}": ${error}`,
         learnings: [],
@@ -188,7 +236,7 @@ ${chunk.text}`;
     specificQuery: string,
     originalQuery: string
   ): string {
-    return `You are an expert research analyst with critical thinking skills. Analyze the following context snippets related to the sub-query "${specificQuery}" (part of a larger research on "${originalQuery}").
+    return `You are an expert research analyst. Analyze the following context snippets related to the sub-query "${specificQuery}" (part of a larger research on "${originalQuery}").
 
 Context Snippets:
 ${context}
@@ -197,10 +245,11 @@ Based ONLY on the provided context snippets:
 
 1. Answer the sub-query: "${specificQuery}" with a comprehensive synthesis of the information.
 
-2. Extract key learnings (aim for 5-7 distinct points if possible). For each learning:
+2. Extract key learnings (aim for 3-5 distinct points if possible). For each learning object:
    - Focus on **actionable insights, implications, limitations, critical perspectives, assumptions, methodological considerations, or comparisons** mentioned in the sources, not just surface-level facts.
    - Ensure each learning is distinct and adds unique value.
-   - **Explicitly cite the source URL or Title** mentioned in the context snippet it came from for *each* learning.
+   - Provide the specific 'Source URL' from the context snippet it came from in the 'source' field.
+   - **Do NOT include the title in the JSON output.**
 
 3. Perform deep analysis by:
    - Identifying connections, contradictions, or gaps between the different source snippets.
@@ -213,9 +262,9 @@ Based ONLY on the provided context snippets:
    - Questions that challenge assumptions present in the current sources.
    - Questions that would fill critical knowledge gaps.
 
-Return your response in this EXACT JSON format:
+Return your response in this EXACT JSON format. The 'learnings' array MUST only contain objects with 'text' and 'source' fields:
 {
-  "answer": "Your comprehensive, nuanced answer to the sub-query...",
+  "answer": "(Your synthesized answer here)",
   "learnings": [
     { 
       "text": "Insightful learning including implications/critique/comparison...", 
@@ -226,354 +275,8 @@ Return your response in this EXACT JSON format:
       "source": "[Source Title/URL from context]" 
     }
   ],
-  "analysis": "In-depth analysis of connections/contradictions/gaps/methodological considerations...",
-  "followUpQuestions": ["Critical question 1?", "Critical question 2?", "Critical question 3?"]
+  "analysis": "(Your in-depth analysis here)",
+  "followUpQuestions": ["(Follow-up question 1?)", "(Follow-up question 2?)"]
 }`;
-  }
-
-  /**
-   * Parses the LLM response into structured insight result.
-   *
-   * @param response - Raw LLM response
-   * @param query - Original query (for fallback)
-   * @returns Structured insight result
-   */
-  private parseInsightResponse(response: string, query: string): InsightResult {
-    try {
-      // Try to extract JSON object from the response
-      let jsonMatch = response.match(/\{[\s\S]*\}/);
-
-      if (jsonMatch) {
-        // Try to parse the JSON
-        const parsedResponse = JSON.parse(jsonMatch[0]);
-
-        // Validate the required fields
-        if (
-          typeof parsedResponse.answer === "string" &&
-          Array.isArray(parsedResponse.learnings) &&
-          typeof parsedResponse.analysis === "string" &&
-          Array.isArray(parsedResponse.followUpQuestions)
-        ) {
-          // Validate and clean learnings
-          const learnings = parsedResponse.learnings
-            .filter(
-              (learning: any) =>
-                typeof learning === "object" &&
-                typeof learning.text === "string" &&
-                typeof learning.source === "string"
-            )
-            .map((learning: any) => ({
-              text: learning.text.trim(),
-              source: learning.source.trim(),
-              title: learning.metadata?.title,
-            }));
-
-          // Validate and clean follow-up questions
-          const followUpQuestions = parsedResponse.followUpQuestions
-            .filter((q: any) => typeof q === "string" && q.trim().length > 0)
-            .map((q: any) => q.trim());
-
-          return {
-            answer: parsedResponse.answer.trim(),
-            learnings,
-            analysis: parsedResponse.analysis.trim(),
-            followUpQuestions,
-          };
-        }
-      }
-
-      // If JSON parsing fails, try to extract insights manually
-      console.warn(
-        "Failed to parse insight response as JSON, falling back to manual extraction"
-      );
-
-      // Simple fallback extraction
-      const answer =
-        this.extractSection(
-          response,
-          ["answer:", "answer", "1."],
-          ["learning", "key learning", "2."]
-        ) || `Analysis of research for "${query}"`;
-
-      const learningText = this.extractSection(
-        response,
-        ["learning", "key learning", "2."],
-        ["analysis", "connection", "contradiction", "3."]
-      );
-      const learnings = this.extractLearningsWithSources(learningText);
-
-      const analysis =
-        this.extractSection(
-          response,
-          ["analysis", "connection", "contradiction", "3."],
-          ["follow-up", "question", "4."]
-        ) || "No detailed analysis available.";
-
-      const questionsText = this.extractSection(
-        response,
-        ["follow-up", "question", "4."],
-        []
-      );
-      const followUpQuestions = this.extractQuestions(questionsText);
-
-      return {
-        answer,
-        learnings,
-        analysis,
-        followUpQuestions,
-      };
-    } catch (error) {
-      console.error("Error parsing insight response:", error);
-
-      // Return minimal fallback
-      return {
-        answer: `Analysis of research for "${query}"`,
-        learnings: [],
-        analysis: "No detailed analysis available.",
-        followUpQuestions: [],
-      };
-    }
-  }
-
-  /**
-   * Extracts a section from text based on start and end markers.
-   *
-   * @param text - Text to extract from
-   * @param startMarkers - Array of possible start markers
-   * @param endMarkers - Array of possible end markers
-   * @returns Extracted section or empty string
-   */
-  private extractSection(
-    text: string,
-    startMarkers: string[],
-    endMarkers: string[]
-  ): string {
-    // Convert text to lowercase for case-insensitive matching
-    const lowerText = text.toLowerCase();
-
-    // Find the start position
-    let startPos = -1;
-    for (const marker of startMarkers) {
-      const pos = lowerText.indexOf(marker.toLowerCase());
-      if (pos !== -1 && (startPos === -1 || pos < startPos)) {
-        startPos = pos;
-      }
-    }
-
-    if (startPos === -1) {
-      return "";
-    }
-
-    // Find the end position
-    let endPos = text.length;
-    for (const marker of endMarkers) {
-      const pos = lowerText.indexOf(marker.toLowerCase(), startPos + 1);
-      if (pos !== -1 && pos < endPos) {
-        endPos = pos;
-      }
-    }
-
-    // Extract and clean the section
-    return text.substring(startPos, endPos).trim();
-  }
-
-  /**
-   * Extracts learnings with sources from text.
-   *
-   * @param text - Text containing learnings with source citations
-   * @returns Array of learnings with sources
-   */
-  private extractLearningsWithSources(text: string): Learning[] {
-    if (!text) {
-      return [];
-    }
-
-    const learnings: Learning[] = [];
-
-    // Split by bullet points or numbered list items
-    const items = text.split(/(?:\r?\n|^)(?:[-*•]|\d+\.)\s+/);
-
-    for (const item of items) {
-      if (!item.trim()) continue;
-
-      // Try to find source citations like [Source: X] or (Source: X)
-      const sourceMatch = item.match(
-        /\[(Source|From):?\s*([^\]]+)\]|\((Source|From):?\s*([^)]+)\)/i
-      );
-
-      if (sourceMatch) {
-        const source = sourceMatch[2] || sourceMatch[4];
-        // Remove the source citation from the text
-        const learningText = item
-          .replace(
-            /\[(Source|From):?\s*([^\]]+)\]|\((Source|From):?\s*([^)]+)\)/i,
-            ""
-          )
-          .trim();
-
-        learnings.push({
-          text: learningText,
-          source,
-          title: sourceMatch[2] || sourceMatch[4],
-        });
-      } else {
-        // If no explicit source, check if there's a colon separator
-        const colonSplit = item.split(/:\s+/);
-        if (colonSplit.length >= 2) {
-          // Assume first part is source, rest is learning
-          const source = colonSplit[0].trim();
-          const learningText = colonSplit.slice(1).join(": ").trim();
-
-          learnings.push({
-            text: learningText,
-            source,
-            title: source,
-          });
-        } else {
-          // No clear source, use generic source
-          learnings.push({
-            text: item.trim(),
-            source: "Research Context",
-            title: "Research Context",
-          });
-        }
-      }
-    }
-
-    return learnings;
-  }
-
-  /**
-   * Extracts questions from text.
-   *
-   * @param text - Text containing questions
-   * @returns Array of questions
-   */
-  private extractQuestions(text: string): string[] {
-    if (!text) {
-      return [];
-    }
-
-    // Split by bullet points, numbered list items, or newlines
-    const items = text.split(/(?:\r?\n|^)(?:[-*•]|\d+\.)\s+/);
-
-    return items
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0 && item.endsWith("?"));
-  }
-
-  /**
-   * Synthesizes a list of learnings to remove redundancy and combine related points.
-   *
-   * @param learnings - The initial list of learnings.
-   * @returns A list of synthesized learnings.
-   */
-  private async synthesizeLearnings(
-    learnings: Learning[]
-  ): Promise<Learning[]> {
-    if (!this.vectorStoreManager) {
-      console.warn("VectorStoreManager not available, skipping synthesis.");
-      return learnings;
-    }
-
-    try {
-      const textsToEmbed = learnings.map((l) => l.text);
-      const embeddings = await this.vectorStoreManager.getEmbeddings(
-        textsToEmbed
-      );
-
-      if (embeddings.length !== learnings.length) {
-        console.error(
-          "Mismatch between learnings and generated embeddings count."
-        );
-        return learnings;
-      }
-
-      const clusters: Learning[][] = [];
-      const visited = new Set<number>();
-      const SIMILARITY_THRESHOLD = 0.85; // Adjust threshold as needed
-
-      // Simple threshold-based clustering
-      for (let i = 0; i < learnings.length; i++) {
-        if (visited.has(i)) continue;
-
-        const currentCluster: Learning[] = [learnings[i]];
-        visited.add(i);
-
-        for (let j = i + 1; j < learnings.length; j++) {
-          if (visited.has(j)) continue;
-
-          const similarity = cosineSimilarity(embeddings[i], embeddings[j]);
-          if (similarity && similarity >= SIMILARITY_THRESHOLD) {
-            currentCluster.push(learnings[j]);
-            visited.add(j);
-          }
-        }
-        clusters.push(currentCluster);
-      }
-
-      console.log(`Formed ${clusters.length} clusters.`);
-
-      // Synthesize learnings within each cluster using an LLM call
-      const synthesizedLearnings: Learning[] = [];
-      for (const cluster of clusters) {
-        if (cluster.length === 1) {
-          synthesizedLearnings.push(cluster[0]); // Keep single learnings as is
-        } else {
-          // Use LLM to synthesize multiple learnings
-          const synthesisPrompt = this.createSynthesisPrompt(cluster);
-          const synthesisResult = await generateText({
-            model: this.llmProvider.chatModel(this.modelId),
-            prompt: synthesisPrompt,
-          });
-
-          // Basic parsing of synthesis result (assuming simple text output)
-          const synthesizedText = synthesisResult.text.trim();
-          // Combine sources/titles from the cluster
-          const combinedSources = Array.from(
-            new Set(cluster.map((l) => l.source).filter((s) => !!s))
-          );
-          const combinedTitles = Array.from(
-            new Set(cluster.map((l) => l.title).filter((t) => !!t))
-          );
-
-          if (synthesizedText) {
-            synthesizedLearnings.push({
-              text: synthesizedText,
-              // Use first source/title as representative, or combine if needed
-              source: combinedSources[0] || "Multiple Sources",
-              title: combinedTitles[0] || undefined,
-            });
-          }
-        }
-      }
-
-      return synthesizedLearnings;
-    } catch (error) {
-      console.error("Error during learning synthesis:", error);
-      return learnings; // Return original learnings if synthesis fails
-    }
-  }
-
-  /**
-   * Creates a prompt for synthesizing multiple related learnings.
-   *
-   * @param cluster - An array of related Learning objects.
-   * @returns Prompt string for synthesis.
-   */
-  private createSynthesisPrompt(cluster: Learning[]): string {
-    const learningTexts = cluster
-      .map((l, i) => {
-        const sourceInfo = l.source ? ` (Source: ${l.source})` : "";
-        return `${i + 1}. ${l.text}${sourceInfo}`;
-      })
-      .join("\n");
-
-    return `You are a concise research analyst. The following points are closely related or potentially redundant. Synthesize them into a single, comprehensive, and nuanced point that captures the core insight without losing important details or contradicting perspectives. Retain citations if present in the original points.
-
-Related Points:
-${learningTexts}
-
-Synthesized Point (Output only the synthesized text):`;
   }
 }

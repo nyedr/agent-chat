@@ -1,4 +1,4 @@
-import { searchSearxng } from "@/lib/search/searxng";
+import { searchSearxng, SearxngSearchResult } from "@/lib/search/searxng";
 
 /**
  * Represents a search result relevant to the research process.
@@ -28,21 +28,14 @@ export class SearchModule {
    */
   async searchWeb(
     query: string,
-    year?: string,
     limit: number = 20
-  ): Promise<ResearchSearchResult[]> {
+  ): Promise<SearxngSearchResult[]> {
     try {
       const { results } = await searchSearxng(query, {
         language: "en",
       });
 
-      const mappedResults: ResearchSearchResult[] = results.map((result) => ({
-        url: result.url,
-        title: result.title,
-        snippet: result.content,
-      }));
-
-      return mappedResults.slice(0, limit);
+      return results.slice(0, limit);
     } catch (error) {
       console.error(`Error performing web search for "${query}":`, error);
       return [];
@@ -60,13 +53,12 @@ export class SearchModule {
    */
   async searchMultiple(
     queries: string[],
-    year?: string,
     limitPerQuery: number = 5,
     removeDuplicates: boolean = true
-  ): Promise<ResearchSearchResult[]> {
+  ): Promise<SearxngSearchResult[]> {
     try {
       const allResultsPromises = queries.map((query) =>
-        this.searchWeb(query, year, limitPerQuery)
+        this.searchWeb(query, limitPerQuery)
       );
 
       const resultsArrays = await Promise.all(allResultsPromises);

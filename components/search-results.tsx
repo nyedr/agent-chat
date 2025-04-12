@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 import { ExternalLinkIcon } from "./icons";
 import { useEffect, useRef } from "react";
-import type { Transition, Variants } from "framer-motion";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { SearchResultItem } from "@/lib/search/types";
@@ -11,8 +10,8 @@ import { LoaderCircle } from "lucide-react";
 
 interface SearchResultsProps {
   results: SearchResultItem[];
-  title?: string;
   isLoading?: boolean;
+  searchTitle?: string;
 }
 
 interface EarthIconHandle {
@@ -23,6 +22,7 @@ interface EarthIconHandle {
 export function SearchResults({
   results,
   isLoading = false,
+  searchTitle,
 }: SearchResultsProps) {
   const earthIconRef = useRef<EarthIconHandle>(null);
 
@@ -58,7 +58,7 @@ export function SearchResults({
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2, duration: 0.5 }}
             >
-              Searching the web...
+              {searchTitle || "Searching the web..."}
             </motion.span>
           </motion.div>
         ) : (

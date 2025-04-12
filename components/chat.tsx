@@ -9,7 +9,6 @@ import { useLocalStorage } from "usehooks-ts";
 
 import { ChatHeader } from "@/components/chat-header";
 
-import { Block } from "./block";
 import { MultimodalInput, SearchMode } from "./multimodal-input";
 import { Messages } from "./messages";
 import { useChatContext } from "@/lib/chat/chat-context";
@@ -17,6 +16,8 @@ import { generateUUID } from "@/lib/utils";
 import { LLMSettings } from "./settings-dialog";
 import { DeepResearch } from "./deep-research";
 import { useDeepResearch } from "@/lib/deep-research-context";
+import { Artifact } from "./artifact";
+import { Greeting } from "./greeting";
 
 const SETTINGS_STORAGE_KEY = "llmSettings";
 
@@ -24,12 +25,10 @@ export function Chat({
   id,
   initialMessages,
   selectedModelId,
-  selectedReasoningModelId,
 }: {
   id: string;
   initialMessages: Array<Message>;
   selectedModelId: string;
-  selectedReasoningModelId: string;
 }) {
   const { notifyChatUpdated } = useChatContext();
   const { mutate } = useSWRConfig();
@@ -58,7 +57,6 @@ export function Chat({
     body: {
       chatId: id,
       modelId: selectedModelId,
-      reasoningModelId: selectedReasoningModelId,
       experimental_deepResearch: searchMode === "deep-research",
       ...settings,
     },
@@ -115,11 +113,7 @@ export function Chat({
           onSettingsChange={handleSettingsChange}
         />
 
-        {messages.length === 0 && (
-          <h1 className="text-3xl leading-8 font-semibold text-center size-full place-items-center grid">
-            What can I help you with?
-          </h1>
-        )}
+        {messages.length === 0 && <Greeting />}
 
         <div className="flex-1 overflow-y-auto md:px-5 px-2 pb-2 sm:pb-4">
           <Messages
@@ -158,12 +152,11 @@ export function Chat({
         />
       )}
 
-      <Block
+      <Artifact
         chatId={id}
         input={input}
         setInput={setInput}
         handleSubmit={handleSubmit}
-        isLoading={isLoading}
         stop={stop}
         attachments={attachments}
         setAttachments={setAttachments}
@@ -171,8 +164,8 @@ export function Chat({
         messages={messagesAsMessage}
         setMessages={setMessagesAsMessage}
         reload={reload}
-        searchMode={searchMode}
-        setSearchMode={setSearchMode}
+        isReadonly={false}
+        status={status}
       />
     </>
   );

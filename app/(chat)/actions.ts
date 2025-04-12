@@ -6,6 +6,7 @@ import {
   generateUUID,
   parseChatFromDB,
   parseChatToDB,
+  UPLOADS_DIR,
   validateUUID,
 } from "@/lib/utils";
 import { getDb } from "@/lib/db/init";
@@ -17,6 +18,10 @@ import {
   RerankResponse,
   RerankedDocument,
 } from "@/lib/search/types";
+import { join } from "path";
+import { ArtifactKind } from "@/components/artifact";
+import { readdir } from "fs/promises";
+import { existsSync } from "fs";
 
 export async function saveChat({
   id,
@@ -455,7 +460,7 @@ export async function saveDocument({
 }: {
   id: string;
   title: string;
-  kind: "text" | "code" | "image";
+  kind: ArtifactKind;
   content: string;
   chatId?: string;
 }) {
@@ -903,12 +908,17 @@ const PYTHON_SCRAPE_URL = PYTHON_SERVER_URL + "/api/python/scrape-process";
 /**
  * Fetches processed content for a list of URLs from the Python backend.
  */
-export async function scrapeAndProcessUrls(
-  urls: string[],
-  query?: string,
-  extractTopKChunks?: number,
-  crawlingStrategy?: "http" | "playwright"
-): Promise<ScrapeProcessResponse> {
+export async function scrapeAndProcessUrls({
+  urls,
+  query,
+  extractTopKChunks,
+  crawlingStrategy,
+}: {
+  urls: string[];
+  query?: string;
+  extractTopKChunks?: number;
+  crawlingStrategy?: "http" | "playwright";
+}): Promise<ScrapeProcessResponse> {
   if (!urls || urls.length === 0) {
     return { results: [] };
   }
@@ -1050,3 +1060,31 @@ export async function rerankDocuments(
     throw error; // Re-throw to be handled by caller
   }
 }
+
+export const getUploadedFiles = async (
+  chatId: string
+): Promise<{ filename: string; url: string }[]> => {
+  validateUUID(chatId);
+  const chatUploadDir = join(UPLOADS_DIR, chatId);
+
+  try {
+    // Check if the directory exists (synchronously) before trying to read it asynchronously
+    if (!existsSync(chatUploadDir)) {
+      console.log(
+        `Upload directory not found for chat ${chatId}, returning empty list.`
+      );
+      return []; // Return empty array if directory doesn't exist
+    }
+
+    const files = await readdir(chatUploadDir);
+    // Return filename and the web-accessible URL
+    return files.map((file) => ({
+      filename: file,
+      url: `/api/uploads/${chatId}/${file}`, // Construct the correct URL
+    }));
+  } catch (error) {
+    console.error(`Error reading upload directory for chat ${chatId}:`, error);
+    // Return empty array or re-throw based on desired error handling
+    return [];
+  }
+};

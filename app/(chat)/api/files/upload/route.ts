@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { join } from "path";
 import { UPLOADS_DIR } from "@/lib/utils";
+import { mkdir, writeFile } from "fs/promises";
 
 // Supported file types and their MIME types
 const SUPPORTED_FILE_TYPES = {
@@ -32,6 +33,9 @@ const FileSchema = z.object({
     }),
 });
 
+// Schema to validate chat ID
+const ChatIdSchema = z.string().uuid("Invalid Chat ID format");
+
 export async function POST(request: NextRequest) {
   console.log("Starting file upload process");
 
@@ -46,13 +50,30 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as Blob | null;
+    const chatId = formData.get("chatId") as string | null;
 
     if (!file) {
       console.error("Upload failed: No file in request");
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
+    if (!chatId) {
+      console.error("Upload failed: No chatId provided");
+      return NextResponse.json({ error: "Missing chatId" }, { status: 400 });
+    }
 
-    console.log("Received file:", {
+    // Validate chatId
+    const validatedChatId = ChatIdSchema.safeParse(chatId);
+    if (!validatedChatId.success) {
+      console.error("Upload failed: Invalid chatId", validatedChatId.error);
+      return NextResponse.json(
+        { error: "Invalid chatId format" },
+        { status: 400 }
+      );
+    }
+    const validChatId = validatedChatId.data;
+
+    console.log("Received file for chat:", {
+      chatId: validChatId,
       type: file.type,
       size: `${(file.size / 1024).toFixed(2)}KB`,
     });
@@ -78,42 +99,48 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
     }
 
-    // Generate a safe filename with timestamp and random suffix to prevent collisions
+    // Generate a safe filename with timestamp and random suffix
     const randomSuffix = Math.random().toString(36).substring(2, 10);
     const safeFilename = `${Date.now()}-${randomSuffix}-${filename.replace(
       /[^a-zA-Z0-9.-]/g,
       "_"
     )}`;
 
-    const filePath = join(UPLOADS_DIR, safeFilename);
+    // Construct the directory path for the chat
+    const chatUploadDir = join(UPLOADS_DIR, validChatId);
+    const filePath = join(chatUploadDir, safeFilename);
 
     console.log("Processing file:", {
       originalName: filename,
       safeName: safeFilename,
-      path: filePath,
+      targetDir: chatUploadDir,
+      fullPath: filePath,
     });
 
     try {
       const fileBuffer = await file.arrayBuffer();
       console.log("Converting file to buffer successful");
 
-      // Dynamically import writeFile to ensure it only runs on the server
-      const { writeFile } = await import("fs/promises");
+      // Ensure the chat-specific directory exists
+      await mkdir(chatUploadDir, { recursive: true });
+      console.log(`Ensured directory exists: ${chatUploadDir}`);
 
       // Write file to disk
       await writeFile(filePath, Buffer.from(fileBuffer));
 
       // Calculate the URL path for the file (relative to the app)
-      const fileUrl = `/api/uploads/${safeFilename}`;
+      // The URL now includes the chat ID
+      const fileUrl = `/api/uploads/${validChatId}/${safeFilename}`;
 
       console.log("File upload successful:", {
         url: fileUrl,
         path: filePath,
       });
 
+      // Return the updated URL format
       return NextResponse.json({
         url: fileUrl,
-        path: filePath,
+        path: filePath, // Keep the full path if needed internally
         originalName: filename,
         size: file.size,
         type: file.type,

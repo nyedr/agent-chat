@@ -38,8 +38,8 @@ function PureArtifactMessages({
           key={message.id}
           message={message}
           isLoading={isLoading && index === messages.length - 1}
-          reload={() => reload()}
           setMessages={setMessages}
+          reload={reload}
         />
       ))}
 

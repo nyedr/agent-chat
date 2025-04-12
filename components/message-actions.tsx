@@ -6,7 +6,7 @@ import CopyButton from "./ui/copy-button";
 import DeleteButton from "./ui/delete-button";
 import RetryButton from "./ui/retry-button";
 import ContinueButton from "./ui/continue-button";
-import { cn, getMessageContent } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import EditMessageButton from "./ui/edit-message-button";
 import { ChatRequestOptions, Message } from "ai";
 
@@ -60,7 +60,7 @@ export function PureMessageActions({
     >
       <Tooltip>
         <TooltipTrigger asChild>
-          <CopyButton content={getMessageContent(message)} asChild={false} />
+          <CopyButton content={message.content} asChild={false} />
         </TooltipTrigger>
         <TooltipContent align="center" side="bottom">
           Copy

@@ -12,20 +12,24 @@ import {
   type SetStateAction,
   type ChangeEvent,
   memo,
+  useMemo,
 } from "react";
 import { toast } from "sonner";
 import { useLocalStorage, useWindowSize } from "usehooks-ts";
 
-import { cn } from "@/lib/utils";
+import { cn, extractLinks, getFaviconUrl } from "@/lib/utils";
 
 import { ArrowUpIcon, PaperclipIcon, RobotIcon, StopIcon } from "./icons";
 import { PreviewAttachment } from "./preview-attachment";
 import { Button } from "./ui/button";
-import { Textarea } from "./ui/textarea";
+import { HighlightableTextarea } from "./ui/textarea";
 import { SuggestedActions } from "./suggested-actions";
 import equal from "fast-deep-equal";
 import { Telescope } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
+import Image from "next/image";
+import Link from "next/link";
+import { motion } from "framer-motion";
 
 export type SearchMode = "agent" | "deep-research";
 
@@ -71,49 +75,6 @@ function PureMultimodalInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
 
-  const adjustHeight = () => {
-    if (textareaRef.current) {
-      // Store the current scroll position
-      const scrollTop = textareaRef.current.scrollTop;
-
-      // Reset height to calculate the actual scrollHeight correctly
-      textareaRef.current.style.height = "auto";
-
-      // Get the scrollHeight (content height)
-      const scrollHeight = textareaRef.current.scrollHeight;
-
-      // Get the maximum height from CSS (75vh converted to pixels)
-      const maxHeight = window.innerHeight * 0.75;
-
-      // Use the lower of scrollHeight or maxHeight for the textarea height
-      const newHeight = Math.min(scrollHeight + 2, maxHeight);
-      textareaRef.current.style.height = `${newHeight}px`;
-
-      // Restore the scroll position
-      textareaRef.current.scrollTop = scrollTop;
-    }
-  };
-
-  const resetHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = "44px";
-    }
-  };
-
-  useEffect(() => {
-    if (textareaRef.current) {
-      adjustHeight();
-    }
-  }, []);
-
-  // Adjust height when window resizes
-  useEffect(() => {
-    if (width) {
-      adjustHeight();
-    }
-  }, [width]);
-
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     "input",
     ""
@@ -125,7 +86,6 @@ function PureMultimodalInput({
       // Prefer DOM value over localStorage to handle hydration
       const finalValue = domValue || localStorageInput || "";
       setInput(finalValue);
-      adjustHeight();
     }
     // Only run once after hydration
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,27 +95,11 @@ function PureMultimodalInput({
     setLocalStorageInput(input);
   }, [input, setLocalStorageInput]);
 
-  const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    // Preserve the current cursor position before adjusting
-    const selectionStart = event.target.selectionStart;
-    const selectionEnd = event.target.selectionEnd;
-
-    const newValue = event.target.value;
-    setInput(newValue);
-    adjustHeight();
-
-    // After React updates the component and adjusts height,
-    // restore the cursor position
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.selectionStart = selectionStart;
-        textareaRef.current.selectionEnd = selectionEnd;
-      }
-    });
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
+  const links = useMemo(() => {
+    return extractLinks(input);
+  }, [input]);
 
   const submitForm = useCallback(() => {
     window.history.replaceState({}, "", `/chat/${chatId}`);
@@ -167,7 +111,6 @@ function PureMultimodalInput({
 
     setAttachments([]);
     setLocalStorageInput("");
-    resetHeight();
 
     if (width && width > 768) {
       textareaRef.current?.focus();
@@ -182,36 +125,46 @@ function PureMultimodalInput({
     searchMode,
   ]);
 
-  const uploadFile = async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
+  const uploadFile = useCallback(
+    async (file: File): Promise<Attachment | undefined> => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("chatId", chatId);
 
-    try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      try {
+        const response = await fetch("/api/files/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        const { url, pathname, contentType } = data;
+        if (response.ok) {
+          const data = await response.json();
+          const { url, originalName, type: contentType } = data;
 
-        return {
-          url,
-          name: pathname,
-          contentType: contentType,
-        };
+          return {
+            url,
+            name: originalName,
+            contentType,
+          };
+        }
+        const { error } = await response.json();
+        toast.error(`Upload Error: ${error}`);
+        return undefined;
+      } catch (error) {
+        console.error("Upload fetch error:", error);
+        toast.error(
+          "Failed to upload file, please check connection and try again!"
+        );
+        return undefined;
       }
-      const { error } = await response.json();
-      toast.error(error);
-    } catch (error) {
-      toast.error("Failed to upload file, please try again!");
-    }
-  };
+    },
+    [chatId]
+  );
 
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);
+      if (files.length === 0) return;
 
       setUploadQueue(files.map((file) => file.name));
 
@@ -219,7 +172,7 @@ function PureMultimodalInput({
         const uploadPromises = files.map((file) => uploadFile(file));
         const uploadedAttachments = await Promise.all(uploadPromises);
         const successfullyUploadedAttachments = uploadedAttachments.filter(
-          (attachment) => attachment !== undefined
+          (attachment): attachment is Attachment => attachment !== undefined
         );
 
         setAttachments((currentAttachments) => [
@@ -227,12 +180,15 @@ function PureMultimodalInput({
           ...successfullyUploadedAttachments,
         ]);
       } catch (error) {
-        console.error("Error uploading files!", error);
+        console.error("Error processing uploaded files:", error);
       } finally {
         setUploadQueue([]);
+        if (event.target) {
+          event.target.value = "";
+        }
       }
     },
-    [setAttachments]
+    [uploadFile, setAttachments]
   );
 
   return (
@@ -283,6 +239,35 @@ function PureMultimodalInput({
               )}
             </div>
 
+            {links.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.4 }}
+                className="flex gap-3 overflow-x-auto items-center px-2"
+              >
+                {links.map((link) => (
+                  <Link
+                    key={link}
+                    href={link}
+                    target="_blank"
+                    className="flex items-center gap-2 bg-secondary hover:bg-muted transition-colors duration-200 px-2.5 py-1.5 rounded-full shadow-sm group"
+                  >
+                    <Image
+                      src={getFaviconUrl(link)}
+                      alt="Favicon"
+                      className="size-5 rounded-full"
+                      width={20}
+                      height={20}
+                    />
+                    <span className="text-sm truncate text-muted-foreground group-hover:text-foreground">
+                      {new URL(link).hostname}
+                    </span>
+                  </Link>
+                ))}
+              </motion.div>
+            )}
+
             <div className="group relative flex w-full items-center">
               <div className="w-full">
                 <div
@@ -304,15 +289,17 @@ function PureMultimodalInput({
                   <div className="flex flex-col justify-start">
                     <div className="flex min-h-[44px] items-start pl-1">
                       <div className="min-w-0 max-w-full flex-1">
-                        <Textarea
+                        <HighlightableTextarea
                           ref={textareaRef}
                           placeholder="Ask anything..."
                           value={input}
-                          onChange={handleInput}
+                          onChange={(e) => setInput(e.target.value)}
                           className={cn(
-                            " min-h-[24px] max-h-[calc(75dvh)] overflow-y-auto resize-none !border-0 !shadow-none !bg-transparent !p-0 !py-2 !rounded-none !text-base",
+                            "max-h-[calc(75dvh)] overflow-y-auto resize-none !border-0 !shadow-none !bg-transparent !p-0 !py-2 !rounded-none !text-base",
                             className
                           )}
+                          minHeight={24}
+                          maxHeight={300}
                           rows={1}
                           autoFocus
                           onKeyDown={(event) => {

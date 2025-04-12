@@ -1,11 +1,12 @@
 import { LinkPreview } from "./ui/link-preview";
 import { useEffect, useRef, useState } from "react";
-import { cn, removeInlineTicks } from "@/lib/utils";
+import { cn, removeInlineTicks, getRelativePath } from "@/lib/utils";
 import Markdown, { Options } from "react-markdown";
 import { Image } from "@lobehub/ui";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { CodeBlock } from "./code-block";
+import { FilePreview } from "./file-preview";
 
 export default function ChatMarkdown({
   content,
@@ -52,11 +53,34 @@ export default function ChatMarkdown({
           </code>
         );
       },
-      a: ({ href, children, className }: any) => (
-        <LinkPreview className={className} url={href}>
-          {children}
-        </LinkPreview>
-      ),
+      a: ({ node, href, children, className, ...props }: any) => {
+        const relativeHref = getRelativePath(href);
+
+        if (
+          typeof relativeHref === "string" &&
+          relativeHref.startsWith("/api/uploads/")
+        ) {
+          // It's a download link - extract filename from the link text
+          // node.children[0].value should contain the raw text like "report.pdf"
+          const filename = node?.children?.[0]?.value || "file";
+
+          // Render the FilePreview component instead of a standard link
+          return (
+            <FilePreview
+              filename={filename}
+              url={relativeHref}
+              // fileSize={...} // Pass file size here if available later
+            />
+          );
+        } else {
+          // Default behavior for other links (e.g., external websites)
+          return (
+            <LinkPreview className={className} url={href}>
+              {children}
+            </LinkPreview>
+          );
+        }
+      },
       h1: ({ children }: any) => (
         <h1
           style={{
@@ -119,17 +143,37 @@ export default function ChatMarkdown({
           {children}
         </h5>
       ),
-      p: ({ children }: any) => (
-        <p
-          className={cn(
-            "whitespace-normal break-words",
-            isUserMessage && "leading-6",
-            !isUserMessage && "my-2 leading-7"
-          )}
-        >
-          {children}
-        </p>
-      ),
+      p: ({ children, node }: any) => {
+        // Check if the paragraph only contains a component that renders a div
+        // (like FilePreview or potentially our Image component)
+        const firstChild = node?.children?.[0];
+        const isBlockElementInside =
+          firstChild?.type === "element" &&
+          (firstChild?.tagName === "div" || // Direct div check (less robust)
+            // Check if it's our custom anchor link that renders FilePreview OR LinkPreview
+            firstChild?.tagName === "a" ||
+            // Check if it's our custom image component
+            firstChild?.tagName === "img");
+
+        if (node?.children?.length === 1 && isBlockElementInside) {
+          // If the paragraph solely contains a block-level component,
+          // render the component directly without the <p> wrapper.
+          return <>{children}</>;
+        }
+
+        // Otherwise, render the paragraph as usual
+        return (
+          <p
+            className={cn(
+              "whitespace-normal break-words",
+              isUserMessage && "leading-6",
+              !isUserMessage && "my-2 leading-7"
+            )}
+          >
+            {children}
+          </p>
+        );
+      },
       ul: ({ children }: any) => (
         <ul className="list-disc pl-6 my-3 space-y-1.5">{children}</ul>
       ),
@@ -145,16 +189,24 @@ export default function ChatMarkdown({
       strong: ({ children }: any) => (
         <strong className="font-semibold">{children}</strong>
       ),
-      img: ({ src, alt }: any) => (
-        <Image
-          src={src}
-          alt={alt}
-          borderless={true}
-          wrapperClassName="w-full max-w-3xl box-shadow-none"
-          objectFit="cover"
-          className="my-0"
-        />
-      ),
+      img: ({ src, alt, ...props }: any) => {
+        let finalSrc = src;
+        if (typeof src === "string" && src.includes("/api/uploads/")) {
+          finalSrc = getRelativePath(src);
+        }
+
+        return (
+          <Image
+            src={finalSrc}
+            alt={alt}
+            borderless={true}
+            wrapperClassName="w-full max-w-3xl box-shadow-none"
+            objectFit="cover"
+            className="my-0"
+            {...props}
+          />
+        );
+      },
     },
   };
 

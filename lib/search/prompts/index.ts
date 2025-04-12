@@ -1,32 +1,20 @@
 import {
   academicSearchResponsePrompt,
   academicSearchRetrieverPrompt,
-} from './academicSearch';
-import {
-  redditSearchResponsePrompt,
-  redditSearchRetrieverPrompt,
-} from './redditSearch';
-import { webSearchResponsePrompt, webSearchRetrieverPrompt } from './webSearch';
+} from "./academicSearch";
+import { webSearchResponsePrompt, webSearchRetrieverPrompt } from "./webSearch";
 import {
   wolframAlphaSearchResponsePrompt,
   wolframAlphaSearchRetrieverPrompt,
-} from './wolframAlpha';
-import { writingAssistantPrompt } from './writingAssistant';
-import {
-  youtubeSearchResponsePrompt,
-  youtubeSearchRetrieverPrompt,
-} from './youtubeSearch';
+} from "./wolframAlpha";
 
-export default {
-  webSearchResponsePrompt,
-  webSearchRetrieverPrompt,
+const prompts = {
   academicSearchResponsePrompt,
   academicSearchRetrieverPrompt,
-  redditSearchResponsePrompt,
-  redditSearchRetrieverPrompt,
+  webSearchResponsePrompt,
+  webSearchRetrieverPrompt,
   wolframAlphaSearchResponsePrompt,
   wolframAlphaSearchRetrieverPrompt,
-  writingAssistantPrompt,
-  youtubeSearchResponsePrompt,
-  youtubeSearchRetrieverPrompt,
 };
+
+export default prompts;

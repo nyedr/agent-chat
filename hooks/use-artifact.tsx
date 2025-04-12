@@ -66,7 +66,9 @@ export function useArtifact() {
   const { data: localArtifactMetadata, mutate: setLocalArtifactMetadata } =
     useSWR<any>(
       () =>
-        artifact.documentId ? `artifact-metadata-${artifact.documentId}` : null,
+        artifact.documentId && !artifact.documentId.startsWith("preview:")
+          ? `artifact-metadata-${artifact.documentId}`
+          : null,
       null,
       {
         fallbackData: null,

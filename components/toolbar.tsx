@@ -38,7 +38,7 @@ import {
   SummarizeIcon,
   TerminalIcon,
 } from "./icons";
-import { BlockKind } from "./block";
+import { ArtifactKind } from "./artifact";
 
 type ToolProps = {
   type:
@@ -285,8 +285,8 @@ const ReadingLevelSelector = ({
   );
 };
 
-const toolsByBlockKind: Record<
-  BlockKind,
+const toolsByArtifactKind: Record<
+  ArtifactKind,
   Array<{
     type:
       | "final-polish"
@@ -299,6 +299,7 @@ const toolsByBlockKind: Record<
     icon: JSX.Element;
   }>
 > = {
+  image: [],
   text: [
     {
       type: "final-polish",
@@ -328,7 +329,7 @@ const toolsByBlockKind: Record<
       icon: <LogsIcon />,
     },
   ],
-  spreadsheet: [
+  sheet: [
     {
       type: "final-polish",
       description: "Format and clean data",
@@ -349,7 +350,7 @@ export const Tools = ({
   append,
   isAnimating,
   setIsToolbarVisible,
-  blockKind,
+  artifactKind,
 }: {
   isToolbarVisible: boolean;
   selectedTool: string | null;
@@ -360,9 +361,18 @@ export const Tools = ({
   ) => Promise<string | null | undefined>;
   isAnimating: boolean;
   setIsToolbarVisible: Dispatch<SetStateAction<boolean>>;
-  blockKind: BlockKind;
+  artifactKind: ArtifactKind;
 }) => {
-  const [primaryTool, ...secondaryTools] = toolsByBlockKind[blockKind];
+  // Get the tools for the kind, defaulting to an empty array
+  const tools = toolsByArtifactKind[artifactKind] || [];
+
+  // If no tools are defined for this artifact kind, render nothing
+  if (tools.length === 0) {
+    return null;
+  }
+
+  // Now we know tools array is not empty, safe to destructure
+  const [primaryTool, ...secondaryTools] = tools;
 
   return (
     <motion.div
@@ -409,7 +419,7 @@ const PureToolbar = ({
   isLoading,
   stop,
   setMessages,
-  blockKind,
+  artifactKind,
 }: {
   isToolbarVisible: boolean;
   setIsToolbarVisible: Dispatch<SetStateAction<boolean>>;
@@ -420,7 +430,7 @@ const PureToolbar = ({
   ) => Promise<string | null | undefined>;
   stop: () => void;
   setMessages: Dispatch<SetStateAction<Message[]>>;
-  blockKind: BlockKind;
+  artifactKind: ArtifactKind;
 }) => {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
@@ -482,7 +492,7 @@ const PureToolbar = ({
               : {
                   opacity: 1,
                   y: 0,
-                  height: toolsByBlockKind[blockKind].length * 50,
+                  height: toolsByArtifactKind[artifactKind].length * 50,
                   transition: { delay: 0 },
                   scale: 1,
                 }
@@ -538,7 +548,7 @@ const PureToolbar = ({
             selectedTool={selectedTool}
             setIsToolbarVisible={setIsToolbarVisible}
             setSelectedTool={setSelectedTool}
-            blockKind={blockKind}
+            artifactKind={artifactKind}
           />
         )}
       </motion.div>
@@ -549,7 +559,7 @@ const PureToolbar = ({
 export const Toolbar = memo(PureToolbar, (prevProps, nextProps) => {
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (prevProps.isToolbarVisible !== nextProps.isToolbarVisible) return false;
-  if (prevProps.blockKind !== nextProps.blockKind) return false;
+  if (prevProps.artifactKind !== nextProps.artifactKind) return false;
 
   return true;
 });

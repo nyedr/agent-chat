@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { cn, getFaviconUrl } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import Link from "next/link";
@@ -44,7 +44,7 @@ export function DeepResearch({
         hostname,
         sources: [source],
         count: 1,
-        favicon: `https://www.google.com/s2/favicons?domain=${hostname}&sz=32`,
+        favicon: getFaviconUrl(source.url),
       };
     } else {
       acc[hostname].sources.push(source);

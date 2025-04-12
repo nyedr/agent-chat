@@ -2,7 +2,7 @@ import { DataStreamWriter, tool } from "ai";
 import { z } from "zod";
 import { searchSearxng } from "../searxng";
 
-interface VideoSearchResult {
+export interface VideoSearchResult {
   img_src: string;
   url: string;
   title: string;

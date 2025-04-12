@@ -2,7 +2,7 @@ import { SearchResults } from "./search-results";
 
 import { DocumentToolCall, DocumentToolResult } from "./document";
 import { DocumentPreview } from "./document-preview";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, memo } from "react";
 
 import { useDeepResearch } from "@/lib/deep-research-context";
 import { ToolCall } from "./tool-call";
@@ -11,60 +11,69 @@ import { Progress } from "./ui/progress";
 import { motion } from "framer-motion";
 import { DeepResearchResult } from "./deep-research-result";
 import { calculateProgressPercentage, formatTime } from "@/lib/utils";
+import fastDeepEqual from "fast-deep-equal";
+import { PythonInterpreter } from "./python-interpreter";
+import { AllowedTool, AllowedToolTypes } from "@/app/(chat)/api/chat/route";
 
-export const ToolResultRenderer = ({
+const ToolResultRendererComponent = ({
   toolName,
-  toolCallId,
   state,
   args,
   result,
   isLoading,
   chatId,
 }: {
-  toolName: string;
-  toolCallId: string;
+  toolName: AllowedTool;
   state: string;
   args: any;
-  result?: any;
+  result?: AllowedToolTypes[typeof toolName];
   isLoading: boolean;
   chatId: string;
 }) => {
   console.log("tool info", toolName, args, result, isLoading, chatId, state);
 
-  // Handle loading states
+  let toolResult = result as AllowedToolTypes[typeof toolName];
+
   if (state !== "result" || isLoading) {
     switch (toolName) {
-      case "search":
-        return <SearchResults results={[]} isLoading={true} />;
+      case "scrapeUrl":
+      case "searchWeb":
+        return (
+          <SearchResults
+            searchTitle={
+              toolName === "scrapeUrl"
+                ? `Scraping ${args.url}...`
+                : "Searching the web..."
+            }
+            results={[]}
+            isLoading={true}
+          />
+        );
       case "deepResearch":
         return <DeepResearchProgress state={state} />;
       case "createDocument":
-        return (
-          <DocumentPreview chatId={chatId} isReadonly={false} args={args} />
-        );
+        return <DocumentPreview isReadonly={false} args={args} />;
       case "updateDocument":
         return (
           <DocumentToolCall type="update" args={args} isReadonly={false} />
         );
-      case "requestSuggestions":
-        return (
-          <DocumentToolCall
-            type="request-suggestions"
-            args={args}
-            isReadonly={false}
-          />
-        );
+      case "pythonInterpreter":
+        return <PythonInterpreter args={args} isLoading={true} state={state} />;
+      case "fileWrite":
+        return <DocumentPreview isReadonly={false} args={args} />;
+      case "fileRead":
+        return <DocumentPreview isReadonly={false} args={args} />;
       default:
         return <ToolCall type="loading" args={args} toolName={toolName} />;
     }
   }
 
-  // Handle results
   switch (toolName) {
-    case "search":
+    case "scrapeUrl":
+    case "searchWeb":
       try {
-        // Get search results data from the response with proper typing
-        const searchData = (result as SearchToolResponse).data;
+        toolResult = result as AllowedToolTypes[typeof toolName];
+        const searchData = (toolResult as SearchToolResponse).data;
 
         return (
           <SearchResults
@@ -90,37 +99,87 @@ export const ToolResultRenderer = ({
         );
       }
     case "deepResearch":
-      if (result.success && result.data?.reportContent) {
-        return <DeepResearchResult data={result.data} />;
-      } else {
+      toolResult = result as AllowedToolTypes[typeof toolName];
+      return <DeepResearchResult data={toolResult.data} />;
+    case "createDocument":
+      toolResult = result as AllowedToolTypes[typeof toolName];
+      return <DocumentPreview isReadonly={false} result={toolResult} />;
+    case "updateDocument":
+      toolResult = result as AllowedToolTypes[typeof toolName];
+
+      if (toolResult.error) {
         return (
-          <div className="text-sm text-muted-foreground">
-            {result.success
-              ? "Research completed, but no report content was found."
-              : `Research failed: ${result.error || "Unknown error"}`}
+          <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
+            Error updating document: {toolResult.error}
           </div>
         );
       }
-    case "createDocument":
-      return (
-        <DocumentPreview chatId={chatId} result={result} isReadonly={false} />
-      );
-    case "updateDocument":
-      return (
-        <DocumentToolResult type="update" isReadonly={false} result={result} />
-      );
-    case "requestSuggestions":
+
       return (
         <DocumentToolResult
-          type="request-suggestions"
+          type="update"
           isReadonly={false}
-          result={result}
+          result={{
+            id: toolResult.id,
+            title: toolResult.title || "Untitled",
+            kind: toolResult.kind || "text",
+            content: toolResult.content || "",
+          }}
+        />
+      );
+    case "pythonInterpreter":
+      toolResult = result as AllowedToolTypes[typeof toolName];
+
+      return (
+        <PythonInterpreter
+          args={args}
+          result={toolResult}
+          isLoading={false}
+          state={state}
+        />
+      );
+    case "fileWrite":
+      toolResult = result as AllowedToolTypes[typeof toolName];
+
+      if (toolResult?.error) {
+        return (
+          <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
+            Error writing file: {toolResult.error}
+          </div>
+        );
+      }
+
+      return (
+        <DocumentToolResult
+          type="create"
+          isReadonly={false}
+          result={{
+            id: "1",
+            title: toolResult.title,
+            kind: toolResult.kind,
+            content: toolResult.content,
+          }}
+        />
+      );
+    case "fileRead":
+      toolResult = result as AllowedToolTypes[typeof toolName];
+
+      return (
+        <DocumentToolResult
+          type="read"
+          isReadonly={false}
+          result={{
+            id: "1",
+            title: toolResult.title,
+            kind: toolResult.kind,
+            content: toolResult.content,
+          }}
         />
       );
     default:
       return (
         <ToolCall
-          type="complete"
+          type="success"
           args={args}
           result={result}
           toolName={toolName}
@@ -142,7 +201,7 @@ const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
   );
 
   const [startTime] = useState<number>(Date.now());
-  const maxDuration = 5 * 60 * 1000; // 5 minutes
+  const maxDuration = 5 * 60 * 1000;
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {
@@ -202,3 +261,32 @@ const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
     </motion.div>
   );
 };
+
+export const ToolResultRenderer = memo(
+  ToolResultRendererComponent,
+  (prevProps: any, nextProps: any) => {
+    if (
+      prevProps.toolName !== nextProps.toolName ||
+      prevProps.toolCallId !== nextProps.toolCallId ||
+      prevProps.state !== nextProps.state ||
+      prevProps.isLoading !== nextProps.isLoading ||
+      prevProps.chatId !== nextProps.chatId
+    ) {
+      return false;
+    }
+
+    try {
+      if (!fastDeepEqual(prevProps.args, nextProps.args)) {
+        return false;
+      }
+      if (!fastDeepEqual(prevProps.result, nextProps.result)) {
+        return false;
+      }
+    } catch (e) {
+      console.error("Memo comparison error:", e);
+      return false;
+    }
+
+    return true;
+  }
+);

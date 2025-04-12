@@ -53,12 +53,12 @@ export class ContentScraperModule {
 
     try {
       // Call the server action to trigger the Python backend
-      const response = await scrapeAndProcessUrls(
+      const response = await scrapeAndProcessUrls({
         urls,
         query,
         extractTopKChunks,
-        "http"
-      );
+        crawlingStrategy: "http",
+      });
 
       console.log(
         `[ContentScraper] Received ${response.results.length} results from Python backend.`

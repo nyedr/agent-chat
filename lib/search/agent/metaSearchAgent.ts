@@ -2,11 +2,11 @@ import { Document } from "@langchain/core/documents";
 import { DataStreamWriter, tool, type Tool } from "ai";
 import { z } from "zod";
 import { searchSearxng, SearxngSearchResult } from "../searxng";
-import { getDocumentsFromLinks } from "../utils/documents";
+import { getDocumentsFromLinks } from "../documents";
 import { SearchResultItem, SearchToolResponse, ScrapeResult } from "../types";
 import { scrapeAndProcessUrls, rerankDocuments } from "@/app/(chat)/actions";
-
-export type OptimizationMode = "speed" | "balanced" | "quality";
+import { extractLinks, getFaviconUrl } from "@/lib/utils";
+import { formatSearchResults } from "../utils";
 
 export interface MetaSearchAgentType {
   /**
@@ -45,11 +45,9 @@ class MetaSearchAgent implements MetaSearchAgentType {
     rawResults: SearxngSearchResult[];
   }> {
     // Check if there are any links in the query
-    const linkRegex = /(https?:\/\/[^\s]+)/g;
-    const links = query.match(linkRegex) || [];
+    const links = extractLinks(query);
 
     if (links.length > 0) {
-      // If links are provided, extract content from those links
       const docs = await getDocumentsFromLinks({ links });
 
       return {
@@ -186,11 +184,12 @@ class MetaSearchAgent implements MetaSearchAgentType {
               },
             });
             try {
-              const scrapeResponse = await scrapeAndProcessUrls(
-                urlsToScrape,
+              const scrapeResponse = await scrapeAndProcessUrls({
+                urls: urlsToScrape,
                 query,
-                3
-              );
+                extractTopKChunks: 3,
+                crawlingStrategy: "http",
+              });
               processedDataMap = new Map(
                 scrapeResponse.results.map((r) => [r.url, r])
               );
@@ -238,7 +237,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
                   url: rawResult.url,
                   description: rawResult.content || "",
                   source: rawResult.url,
-                  favicon: `https://www.google.com/s2/favicons?domain=${hostname}`,
+                  favicon: getFaviconUrl(rawResult.url),
                   publishedDate:
                     processed?.publishedDate || rawResult.publishedDate || null,
                   relevantContent: relevantContent,
@@ -262,7 +261,7 @@ class MetaSearchAgent implements MetaSearchAgentType {
                   url: doc.metadata.url,
                   description: description,
                   source: doc.metadata.url,
-                  favicon: `https://www.google.com/s2/favicons?domain=${hostname}`,
+                  favicon: getFaviconUrl(doc.metadata.url),
                   publishedDate: doc.metadata.publishedDate || null,
                   relevantContent: doc.pageContent,
                 };
@@ -300,24 +299,10 @@ class MetaSearchAgent implements MetaSearchAgentType {
           } else {
             formattedText += "Search Results:\n";
           }
+
           formattedText +=
             finalResults.length > 0
-              ? finalResults
-                  .map((result, i) => {
-                    let content = `[${i + 1}] "${result.title}" from ${
-                      result.source
-                    }\n${result.description || "No description available."}`;
-                    if (
-                      result.relevantContent &&
-                      !result.relevantContent.startsWith("Error processing:")
-                    ) {
-                      content += `\n\nRelevant content from page:\n${result.relevantContent}`;
-                    } else if (result.relevantContent) {
-                      content += `\n[Note: Error fetching/processing content for this source]`;
-                    }
-                    return content;
-                  })
-                  .join("\n\n")
+              ? formatSearchResults(finalResults)
               : "No relevant results found.";
 
           const response: SearchToolResponse = {

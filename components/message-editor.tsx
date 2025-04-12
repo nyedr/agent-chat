@@ -8,7 +8,7 @@ import {
   deleteTrailingMessages,
   updateMessageContent,
 } from "@/app/(chat)/actions";
-import { cn, getMessageContent } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export type MessageEditorProps = {
   message: Message;
@@ -31,9 +31,7 @@ export function MessageEditor({
 }: MessageEditorProps) {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const messageContent = getMessageContent(message);
-
-  const [draftContent, setDraftContent] = useState<string>(messageContent);
+  const [draftContent, setDraftContent] = useState<string>(message.content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {

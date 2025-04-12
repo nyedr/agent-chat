@@ -2,15 +2,16 @@ import { DataStreamWriter, tool } from "ai";
 import { z } from "zod";
 import { getDocumentById } from "@/app/(chat)/actions";
 import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
+import { ArtifactKind } from "@/components/artifact";
 
 interface UpdateDocumentProps {
   dataStream: DataStreamWriter;
 }
 
-interface UpdateDocumentToolResult {
+export interface UpdateDocumentToolResult {
   id: string;
   title?: string;
-  kind?: string;
+  kind?: ArtifactKind;
   content?: string;
   error?: string;
 }

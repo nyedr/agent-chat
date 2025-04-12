@@ -9,17 +9,18 @@ import Markdown from "./markdown";
 import { MessageActions } from "./message-actions";
 import { PreviewAttachment } from "./preview-attachment";
 import equal from "fast-deep-equal";
-import { cn, extractSearchSources, getMessageContent } from "@/lib/utils";
+import { cn, extractSearchSources } from "@/lib/utils";
 import { MessageEditor } from "./message-editor";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import AnimatedGradientText from "./ui/gradient-text";
 import { deleteSingleMessage } from "@/app/(chat)/actions";
 import Image from "next/image";
 import { ToolResultRenderer } from "./tool-result-renderer";
+import { MessageReasoning } from "./message-reasoning";
 
 const UserMessage = ({ message }: { message: Message }) => (
   <div className="markdown-message-container flex flex-col gap-4 max-w-[736px] rounded-3xl px-5 py-2.5 bg-muted text-primary-foreground w-fit align-end">
-    <Markdown isUserMessage={true} content={getMessageContent(message)} />
+    <Markdown isUserMessage={true} content={message.content} />
   </div>
 );
 
@@ -39,12 +40,34 @@ const MessageAttachments = ({
   );
 };
 
-const MessageParts = ({ parts, chatId }: { parts?: any[]; chatId: string }) => {
+const MessagePartsComponent = ({
+  parts,
+  chatId,
+  isLoading,
+  messageId,
+}: {
+  parts?: any[];
+  chatId: string;
+  isLoading: boolean;
+  messageId: string;
+}) => {
   if (!parts || parts.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-2 w-full">
       {parts.map((part, index) => {
+        const key = `message-${messageId}-part-${index}`;
+
+        if (part.type === "reasoning") {
+          return (
+            <MessageReasoning
+              key={key}
+              reasoning={part.reasoning}
+              isLoading={isLoading}
+            />
+          );
+        }
+
         if (part.type === "text") {
           return (
             <div
@@ -54,7 +77,9 @@ const MessageParts = ({ parts, chatId }: { parts?: any[]; chatId: string }) => {
               <Markdown isUserMessage={false} content={part.text} />
             </div>
           );
-        } else if (part.type === "tool-invocation") {
+        }
+
+        if (part.type === "tool-invocation") {
           const { toolInvocation } = part;
           const { toolName, toolCallId, state, args } = toolInvocation;
 
@@ -67,7 +92,6 @@ const MessageParts = ({ parts, chatId }: { parts?: any[]; chatId: string }) => {
             >
               <ToolResultRenderer
                 toolName={toolName}
-                toolCallId={toolCallId}
                 state={state}
                 args={args}
                 result={state === "result" ? toolInvocation.result : undefined}
@@ -76,7 +100,9 @@ const MessageParts = ({ parts, chatId }: { parts?: any[]; chatId: string }) => {
               />
             </div>
           );
-        } else if (part.type === "file") {
+        }
+
+        if (part.type === "file") {
           return (
             <div key={`file-${index}`} className="file-container">
               <Image
@@ -92,6 +118,9 @@ const MessageParts = ({ parts, chatId }: { parts?: any[]; chatId: string }) => {
     </div>
   );
 };
+
+// Memoize MessageParts
+const MessageParts = memo(MessagePartsComponent);
 
 const PurePreviewMessage = ({
   chatId,
@@ -173,17 +202,14 @@ const PurePreviewMessage = ({
               "items-start": message.role === "assistant",
             })}
           >
-            {/* Display message attachments */}
             <MessageAttachments
               attachments={message.experimental_attachments}
             />
 
-            {/* Display user message content in view mode */}
             {message.content && mode === "view" && message.role === "user" && (
               <UserMessage message={message} />
             )}
 
-            {/* Display message editor in edit mode */}
             {message.content && mode === "edit" && (
               <div className="flex flex-row gap-2 items-start">
                 <MessageEditor
@@ -197,14 +223,17 @@ const PurePreviewMessage = ({
               </div>
             )}
 
-            {/* Display assistant message parts if available */}
             {message.role !== "user" &&
               message.parts &&
               message.parts.length > 0 && (
-                <MessageParts chatId={chatId} parts={message.parts} />
+                <MessageParts
+                  chatId={chatId}
+                  parts={message.parts}
+                  isLoading={isLoading}
+                  messageId={message.id}
+                />
               )}
 
-            {/* Display message actions */}
             {(message.role === "assistant" || message.role === "user") && (
               <MessageActions
                 key={`action-${message.id}`}
@@ -227,7 +256,7 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
-    if (prevProps.message.content !== nextProps.message.content) return false;
+    if (prevProps.message.id !== nextProps.message.id) return false;
     if (!equal(prevProps.message.parts, nextProps.message.parts)) return false;
 
     return true;

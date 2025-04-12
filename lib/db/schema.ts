@@ -50,7 +50,7 @@ export const document = sqliteTable("document", {
     .$defaultFn(() => new Date().toISOString()),
   title: text("title").notNull(),
   content: text("content"),
-  kind: text("kind").notNull().default("text"),
+  kind: text("kind", { enum: ["text", "code", "image", "sheet"] }).notNull(),
   chatId: text("chatId").references(() => chat.id),
 });
 

@@ -1,4 +1,4 @@
-import { generateUUID } from '@/lib/utils';
+import { generateUUID } from "@/lib/utils";
 import {
   type Dispatch,
   type SetStateAction,
@@ -7,11 +7,12 @@ import {
   useState,
   useEffect,
   memo,
-} from 'react';
-import type { ConsoleOutput, ConsoleOutputContent, UIBlock } from './block';
-import { Button } from './ui/button';
-import { PlayIcon } from './icons';
-import { useBlockSelector } from '@/hooks/use-block';
+} from "react";
+import type { ConsoleOutput, ConsoleOutputContent } from "./console";
+import { Button } from "./ui/button";
+import { PlayIcon } from "./icons";
+import { useArtifactSelector } from "@/hooks/use-artifact";
+import { UIArtifact } from "./artifact";
 
 const OUTPUT_HANDLERS = {
   matplotlib: `
@@ -50,10 +51,10 @@ const OUTPUT_HANDLERS = {
 };
 
 function detectRequiredHandlers(code: string): string[] {
-  const handlers: string[] = ['basic'];
+  const handlers: string[] = ["basic"];
 
-  if (code.includes('matplotlib') || code.includes('plt.')) {
-    handlers.push('matplotlib');
+  if (code.includes("matplotlib") || code.includes("plt.")) {
+    handlers.push("matplotlib");
   }
 
   return handlers;
@@ -62,15 +63,15 @@ function detectRequiredHandlers(code: string): string[] {
 export function PureRunCodeButton({
   setConsoleOutputs,
 }: {
-  block: UIBlock;
+  artifact: UIArtifact;
   setConsoleOutputs: Dispatch<SetStateAction<Array<ConsoleOutput>>>;
 }) {
   const isPython = true;
   const [pyodide, setPyodide] = useState<any>(null);
 
-  const codeContent = useBlockSelector((state) => state.content);
-  const isBlockStreaming = useBlockSelector(
-    (state) => state.status === 'streaming',
+  const codeContent = useArtifactSelector((state) => state.content);
+  const isArtifactStreaming = useArtifactSelector(
+    (state) => state.status === "streaming"
   );
 
   const loadAndRunPython = useCallback(async () => {
@@ -82,7 +83,7 @@ export function PureRunCodeButton({
       {
         id: runId,
         contents: [],
-        status: 'in_progress',
+        status: "in_progress",
       },
     ]);
 
@@ -93,7 +94,7 @@ export function PureRunCodeButton({
         if (!currentPyodideInstance) {
           // @ts-expect-error - loadPyodide is not defined
           const newPyodideInstance = await globalThis.loadPyodide({
-            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.23.4/full/',
+            indexURL: "https://cdn.jsdelivr.net/pyodide/v0.23.4/full/",
           });
 
           setPyodide(null);
@@ -104,9 +105,9 @@ export function PureRunCodeButton({
         currentPyodideInstance.setStdout({
           batched: (output: string) => {
             stdOutputs.push({
-              type: output.startsWith('data:image/png;base64')
-                ? 'image'
-                : 'text',
+              type: output.startsWith("data:image/png;base64")
+                ? "image"
+                : "text",
               value: output,
             });
           },
@@ -118,8 +119,8 @@ export function PureRunCodeButton({
               ...outputs.filter((output) => output.id !== runId),
               {
                 id: runId,
-                contents: [{ type: 'text', value: message }],
-                status: 'loading_packages',
+                contents: [{ type: "text", value: message }],
+                status: "loading_packages",
               },
             ]);
           },
@@ -129,12 +130,12 @@ export function PureRunCodeButton({
         for (const handler of requiredHandlers) {
           if (OUTPUT_HANDLERS[handler as keyof typeof OUTPUT_HANDLERS]) {
             await currentPyodideInstance.runPythonAsync(
-              OUTPUT_HANDLERS[handler as keyof typeof OUTPUT_HANDLERS],
+              OUTPUT_HANDLERS[handler as keyof typeof OUTPUT_HANDLERS]
             );
 
-            if (handler === 'matplotlib') {
+            if (handler === "matplotlib") {
               await currentPyodideInstance.runPythonAsync(
-                'setup_matplotlib_output()',
+                "setup_matplotlib_output()"
               );
             }
           }
@@ -147,7 +148,7 @@ export function PureRunCodeButton({
           {
             id: generateUUID(),
             contents: stdOutputs.filter((output) => output.value.trim().length),
-            status: 'completed',
+            status: "completed",
           },
         ]);
       } catch (error: any) {
@@ -155,8 +156,8 @@ export function PureRunCodeButton({
           ...outputs.filter((output) => output.id !== runId),
           {
             id: runId,
-            contents: [{ type: 'text', value: error.message }],
-            status: 'failed',
+            contents: [{ type: "text", value: error.message }],
+            status: "failed",
           },
         ]);
       }
@@ -181,7 +182,7 @@ export function PureRunCodeButton({
             gc.collect()
           `);
         } catch (error) {
-          console.warn('Cleanup failed:', error);
+          console.warn("Cleanup failed:", error);
         }
       }
     };
@@ -196,7 +197,7 @@ export function PureRunCodeButton({
           loadAndRunPython();
         });
       }}
-      disabled={isBlockStreaming}
+      disabled={isArtifactStreaming}
     >
       <PlayIcon size={18} /> Run
     </Button>
@@ -204,7 +205,7 @@ export function PureRunCodeButton({
 }
 
 export const RunCodeButton = memo(PureRunCodeButton, (prevProps, nextProps) => {
-  if (prevProps.block.status !== nextProps.block.status) return false;
+  if (prevProps.artifact.status !== nextProps.artifact.status) return false;
 
   return true;
 });

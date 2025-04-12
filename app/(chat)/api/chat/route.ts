@@ -1,12 +1,31 @@
 import {
+  CoreMessage,
   type Message,
+  appendResponseMessages,
   createDataStreamResponse,
   smoothStream,
   streamText,
 } from "ai";
 import { z } from "zod";
 import { modelsByCapability, myProvider } from "@/lib/ai/models";
-import { createDocument, deepResearch, updateDocument } from "@/lib/ai/tools";
+import {
+  createDocument,
+  type CreateDocumentToolResult,
+  deepResearch,
+  type DeepResearchToolResult,
+  searchWeb,
+  type SearchWebResult,
+  updateDocument,
+  type UpdateDocumentToolResult,
+  pythonInterpreter,
+  type PythonInterpreterResult,
+  fileRead,
+  type FileReadResult,
+  fileWrite,
+  type FileWriteResult,
+  scrapeUrl,
+  type ScrapeUrlResult,
+} from "@/lib/ai/tools";
 
 import { systemPrompt } from "@/lib/ai/prompts";
 import {
@@ -17,34 +36,51 @@ import {
   getAllChats,
   getChatById,
   getDocumentsByChatId,
+  getUploadedFiles,
   updateChat,
 } from "@/app/(chat)/actions";
 import {
   generateUUID,
-  getMessageContent,
   getMostRecentUserMessage,
-  sanitizeResponseMessages,
+  UPLOADS_DIR,
 } from "@/lib/utils";
 
 import { createSearchTools } from "@/lib/search/tools";
+import { extractMessageContext } from "@/lib/chat/context-extractor";
+import path from "path";
+import { rm } from "fs/promises";
+import fs from "fs";
+import { ImageSearchResult } from "@/lib/search/chains/imageSearchAgent";
+import { VideoSearchResult } from "@/lib/search/chains/videoSearchAgent";
 
-export type AllowedTools =
-  | "deepResearch"
-  | "search"
-  | "createDocument"
-  | "updateDocument"
-  | "imageSearch"
-  | "videoSearch";
+export interface AllowedToolTypes {
+  deepResearch: DeepResearchToolResult;
+  searchWeb: SearchWebResult;
+  createDocument: CreateDocumentToolResult;
+  updateDocument: UpdateDocumentToolResult;
+  fileRead: FileReadResult;
+  fileWrite: FileWriteResult;
+  pythonInterpreter: PythonInterpreterResult;
+  imageSearch: ImageSearchResult[];
+  videoSearch: VideoSearchResult[];
+  scrapeUrl: ScrapeUrlResult;
+}
 
-const deepResearchTools: AllowedTools[] = ["deepResearch"];
+export type AllowedTool = keyof AllowedToolTypes;
 
-const allTools: AllowedTools[] = [
+const deepResearchTools: AllowedTool[] = ["deepResearch"];
+
+const allTools: AllowedTool[] = [
   ...deepResearchTools,
   "createDocument",
   "updateDocument",
   "imageSearch",
   "videoSearch",
-  "search",
+  "searchWeb",
+  "scrapeUrl",
+  "pythonInterpreter",
+  "fileRead",
+  "fileWrite",
 ];
 
 export async function POST(request: Request) {
@@ -52,7 +88,6 @@ export async function POST(request: Request) {
     chatId,
     messages,
     modelId,
-    reasoningModelId,
     experimental_deepResearch = false,
     maxTokens,
     temperature,
@@ -61,14 +96,13 @@ export async function POST(request: Request) {
     presencePenalty,
     frequencyPenalty,
     seed,
-
     usePreScrapingRerank,
     maxFinalResults,
+    experimental_context = true,
   }: {
     chatId: string;
     messages: Array<Message>;
     modelId: string;
-    reasoningModelId: string;
     experimental_deepResearch?: boolean;
     maxTokens?: number;
     temperature?: number;
@@ -79,6 +113,7 @@ export async function POST(request: Request) {
     seed?: number;
     usePreScrapingRerank?: boolean;
     maxFinalResults?: number;
+    experimental_context?: boolean;
   } = await request.json();
 
   const userMessage = getMostRecentUserMessage(messages);
@@ -114,12 +149,11 @@ export async function POST(request: Request) {
     .with(-1, userMessage)
     .map(({ parts, ...rest }: any) => {
       return {
-        content: getMessageContent(rest as Message),
+        content: rest.content,
         role: rest.role,
-        id: rest.id,
-        experimental_attachments: rest.experimental_attachments,
+        // experimental_attachments: rest.experimental_attachments,
       };
-    }) satisfies Message[];
+    }) satisfies CoreMessage[];
 
   console.log("validMessages:", validMessages);
 
@@ -131,16 +165,17 @@ export async function POST(request: Request) {
   const chatDocuments = await getDocumentsByChatId({
     chatId,
   });
+  const uploadedFiles = await getUploadedFiles(chatId);
 
   console.log("chatDocuments:", chatDocuments);
+  console.log("uploadedFiles:", uploadedFiles);
+
+  const extractedContextFromUserMessage = experimental_context
+    ? await extractMessageContext(userMessage.content)
+    : null;
 
   return createDataStreamResponse({
     execute: (dataStream) => {
-      dataStream.writeData({
-        type: "user-message-id",
-        content: userMessage.id,
-      });
-
       const searchTools = createSearchTools({
         dataStream,
         usePreScrapingRerank,
@@ -152,15 +187,34 @@ export async function POST(request: Request) {
         system: systemPrompt({
           tools: experimental_deepResearch ? deepResearchTools : allTools,
           documents: chatDocuments,
+          uploadedFiles: uploadedFiles,
+          context: extractedContextFromUserMessage?.context,
+          currentDate: new Date().toISOString(),
         }),
+        providerOptions: {
+          openrouter: {
+            exclude: false,
+          },
+        },
         messages: validMessages,
-        maxSteps: 10,
-        experimental_transform: smoothStream() as any,
+        maxSteps: 15,
+        experimental_transform: smoothStream({ chunking: "word" }),
         experimental_generateMessageId: generateUUID,
         experimental_activeTools: experimental_deepResearch
           ? deepResearchTools
           : allTools,
         tools: {
+          fileRead: fileRead({
+            dataStream,
+            chatId,
+          }),
+          fileWrite: fileWrite({
+            dataStream,
+            chatId,
+          }),
+          scrapeUrl: scrapeUrl({
+            dataStream,
+          }),
           createDocument: createDocument({
             dataStream,
             chatId,
@@ -168,22 +222,22 @@ export async function POST(request: Request) {
           updateDocument: updateDocument({
             dataStream,
           }),
-          search: searchTools.searchTool,
+          searchWeb: searchWeb({
+            dataStream,
+          }),
           imageSearch: searchTools.imageSearchTool,
           videoSearch: searchTools.videoSearchTool,
           deepResearch: deepResearch({
             dataStream,
             models: modelsByCapability.deepResearch,
           }),
+          pythonInterpreter: pythonInterpreter({
+            dataStream,
+            chatId,
+          }),
         },
         onFinish: async ({ response }) => {
           try {
-            const sanitizedResponseMessage = sanitizeResponseMessages(
-              response.messages
-            ) as Message;
-
-            console.log("sanitizedResponseMessage:", sanitizedResponseMessage);
-
             const assistantMessageId = response.messages
               .filter((message) => message.role === "assistant")
               .at(-1)?.id;
@@ -192,27 +246,16 @@ export async function POST(request: Request) {
               throw new Error("No assistant message found!");
             }
 
-            if (sanitizedResponseMessage.role === "assistant") {
-              dataStream.writeMessageAnnotation({
-                messageIdFromServer: assistantMessageId,
-              });
-            }
+            const [, assistantMessage] = appendResponseMessages({
+              messages: [userMessage],
+              responseMessages: response.messages,
+            });
 
-            const responseMessage: Message = {
-              createdAt: new Date(),
-              content: getMessageContent(sanitizedResponseMessage),
-              role: sanitizedResponseMessage.role,
-              parts: sanitizedResponseMessage.parts,
-              id: assistantMessageId,
-              experimental_attachments:
-                sanitizedResponseMessage.experimental_attachments,
-            };
-
-            console.log("responseMessage:", responseMessage);
+            console.log("assistantMessage:", assistantMessage);
 
             await addChatMessage({
               chatId,
-              message: responseMessage,
+              message: assistantMessage,
             });
           } catch (error) {
             console.error("Failed to save chat");
@@ -227,7 +270,15 @@ export async function POST(request: Request) {
         ...(seed !== undefined && { seed }),
       });
 
-      result.mergeIntoDataStream(dataStream);
+      result.consumeStream();
+
+      result.mergeIntoDataStream(dataStream, {
+        sendReasoning: true,
+      });
+    },
+    onError: (error) => {
+      console.error("Error in chat:", error);
+      return "An error occurred while processing your request";
     },
   });
 }
@@ -240,13 +291,47 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "No ID provided" }, { status: 400 });
   }
 
-  await deleteDocumentsByChatId({ chatId: id });
+  // 1. Delete associated documents from DB
+  try {
+    await deleteDocumentsByChatId({ chatId: id });
+    console.log(`Deleted documents for chat ID: ${id}`);
+  } catch (error) {
+    console.error(`Error deleting documents for chat ID ${id}:`, error);
+    // Decide if we should proceed or return error
+  }
 
+  // 2. Delete chat entry from DB
   try {
     await deleteChatById(id);
-    return Response.json({ success: true, message: "Chat deleted" });
+    console.log(`Deleted chat entry for chat ID: ${id}`);
+
+    // 3. Delete uploads directory from filesystem *after* successful DB deletion
+    const uploadDirPath = path.join(UPLOADS_DIR, id);
+    try {
+      // Check if directory exists before attempting removal
+      // Note: existsSync is sync, but acceptable here before the async rm
+      if (fs.existsSync(uploadDirPath)) {
+        await rm(uploadDirPath, { recursive: true, force: true });
+        console.log(`Deleted uploads directory: ${uploadDirPath}`);
+      } else {
+        console.log(
+          `Uploads directory not found, skipping deletion: ${uploadDirPath}`
+        );
+      }
+    } catch (fsError) {
+      console.error(
+        `Error deleting uploads directory ${uploadDirPath}:`,
+        fsError
+      );
+      // Log error but potentially still return success as chat is deleted
+    }
+
+    return Response.json({
+      success: true,
+      message: "Chat and associated data deleted",
+    });
   } catch (error) {
-    console.error("Error deleting chat:", error);
+    console.error(`Error deleting chat ID ${id}:`, error);
     return Response.json({ error: "Failed to delete chat" }, { status: 500 });
   }
 }

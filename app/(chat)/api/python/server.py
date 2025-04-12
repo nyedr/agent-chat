@@ -12,6 +12,7 @@ from modules import (
     ScraperProcessor,
     chunker
 )
+from modules.code_executor import execute_python_code, MAX_TIMEOUT
 
 # Configure logging
 logging.basicConfig(level=logging.INFO,
@@ -221,6 +222,57 @@ def scrape_process_urls():
             f"Error during scrape-process request: {e}", exc_info=True)
         return jsonify({"error": f"Failed to process scraping request: {str(e)}"}), 500
 
+# ============== CODE EXECUTION ENDPOINT ==============
+
+
+@app.route('/api/python/execute', methods=['POST'])
+def execute_code():
+    """Executes Python code securely, handling input files and chatId."""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data or 'chat_id' not in data:
+            return jsonify({"error": "Request body must be JSON with 'code' and 'chat_id' fields."}), 400
+
+        code_to_execute = data['code']
+        chat_id = data['chat_id']
+        input_files = data.get('input_files', [])
+        timeout = data.get('timeout', 10)
+
+        # --- Input Validation ---
+        if not isinstance(code_to_execute, str):
+            return jsonify({"error": "'code' field must be a string."}), 400
+        if not isinstance(chat_id, str) or not chat_id:
+            return jsonify({"error": "'chat_id' field must be a non-empty string."}), 400
+        if not isinstance(input_files, list):
+            return jsonify({"error": "'input_files' field must be an array if provided."}), 400
+        for item in input_files:
+            if not isinstance(item, dict) or 'filename' not in item or 'url' not in item or \
+               not isinstance(item['filename'], str) or not isinstance(item['url'], str):
+                return jsonify({"error": "Each item in 'input_files' must be an object with string 'filename' and string 'url'."}), 400
+        if timeout is not None and not isinstance(timeout, (int, float)):
+            return jsonify({"error": "'timeout' field must be a number if provided."}), 400
+        # --- End Validation ---
+
+        logger.info(
+            f"Received code execution request for chat_id: {chat_id}. Code length: {len(code_to_execute)}. Timeout: {timeout}. Input files: {len(input_files)}"
+        )
+
+        # Call the secure execution function, passing input_files and chat_id
+        execution_result = execute_python_code(
+            code_to_execute,
+            input_files=input_files,
+            timeout=timeout,
+            chat_id=chat_id
+        )
+
+        # Return the result (which now includes plot_url instead of plot_base64)
+        return jsonify(execution_result)
+
+    except Exception as e:
+        logger.error(
+            f"Error during code execution request: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to execute code: {str(e)}"}), 500
+
 # ============== SERVER INFORMATION ENDPOINT ==============
 
 
@@ -237,13 +289,15 @@ def index():
             "document_conversion": "/api/python/convert-document",
             "embeddings": "/api/python/embed",
             "rerank": "/api/python/rerank",
-            "scrape_process": "/api/python/scrape-process"
+            "scrape_process": "/api/python/scrape-process",
+            "execute_code": "/api/python/execute"
         },
         "status": "online",
         "embedding_model": embedding_info["model"],
         "embedding_dimensions": embedding_info["dimensions"],
         "reranker_model": reranker_info["model"] if reranker_info["loaded"] else "N/A (Load Failed)",
-        "quality_model_loaded": quality_filter_service.is_model_loaded()
+        "quality_model_loaded": quality_filter_service.is_model_loaded(),
+        "code_execution_max_timeout": MAX_TIMEOUT
     })
 
 
@@ -259,4 +313,6 @@ if __name__ == '__main__':
         f"- Reranking endpoint: http://localhost:{port}/api/python/rerank")
     logger.info(
         f"- Scrape & Process endpoint: http://localhost:{port}/api/python/scrape-process")
+    logger.info(
+        f"- Code Execution endpoint: http://localhost:{port}/api/python/execute")
     app.run(host='0.0.0.0', port=port)

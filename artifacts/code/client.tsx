@@ -1,4 +1,5 @@
 import { Artifact } from "@/components/create-artifact";
+import { CodeEditor } from "@/components/code-editor";
 import {
   CopyIcon,
   LogsIcon,
@@ -9,9 +10,11 @@ import {
 } from "@/components/icons";
 import { toast } from "sonner";
 import { generateUUID } from "@/lib/utils";
-import { Console } from "@/components/console";
-import { ConsoleOutput, ConsoleOutputContent } from "@/components/block";
-import { CodeEditor } from "@/components/code-editor";
+import {
+  Console,
+  ConsoleOutput,
+  ConsoleOutputContent,
+} from "@/components/console";
 
 const OUTPUT_HANDLERS = {
   matplotlib: `
@@ -91,8 +94,7 @@ export const codeArtifact = new Artifact<"code", Metadata>({
     return (
       <>
         <div className="px-1">
-          {/* TODO: Implement saveContent if we want to save the content */}
-          <CodeEditor {...props} saveContent={() => {}} />
+          <CodeEditor {...props} />
         </div>
 
         {metadata?.outputs && (

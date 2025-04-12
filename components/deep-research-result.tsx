@@ -4,21 +4,11 @@ import { Card, CardContent, CardFooter, CardHeader } from "./ui/card";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import { Button } from "./ui/button";
 import Image from "next/image";
-
-interface DeepResearchData {
-  reportContent: string;
-  sources?: Record<string, string>;
-  metrics?: {
-    timeElapsed: number;
-    iterationsCompleted?: number;
-    sourcesExamined: number;
-  };
-  completedSteps?: number;
-  totalSteps?: number;
-}
+import { getFaviconUrl } from "@/lib/utils";
+import { DeepResearchToolResult } from "@/lib/ai/tools";
 
 interface DeepResearchResultProps {
-  data: DeepResearchData;
+  data: DeepResearchToolResult["data"];
 }
 
 const formatDuration = (ms: number) => {
@@ -53,9 +43,7 @@ export const DeepResearchResult: React.FC<DeepResearchResultProps> = ({
   const sourceLinks = Object.keys(sources || {});
 
   const avatarFaviconUrls = Array.from({ length: sourcesExamined }, (_, i) => {
-    const sourceLink = sourceLinks[i];
-    const sourceHostname = new URL(sourceLink).hostname;
-    return `https://www.google.com/s2/favicons?domain=${sourceHostname}&sz=32`;
+    return getFaviconUrl(sourceLinks[i]);
   });
 
   const avatarFavicons = [...new Set(avatarFaviconUrls)].slice(

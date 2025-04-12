@@ -1,12 +1,18 @@
 import { memo } from "react";
 
-import type { BlockKind } from "./block";
-import { FileIcon, LoaderIcon, MessageIcon, PencilEditIcon } from "./icons";
+import type { ArtifactKind } from "./artifact";
+import {
+  EyeIcon,
+  FileIcon,
+  LoaderIcon,
+  MessageIcon,
+  PencilEditIcon,
+} from "./icons";
 import { toast } from "sonner";
-import { useBlock } from "@/hooks/use-block";
+import { useArtifact } from "@/hooks/use-artifact";
 
 const getActionText = (
-  type: "create" | "update" | "request-suggestions",
+  type: "create" | "update" | "request-suggestions" | "read",
   tense: "present" | "past"
 ) => {
   switch (type) {
@@ -18,14 +24,16 @@ const getActionText = (
       return tense === "present"
         ? "Adding suggestions"
         : "Added suggestions to";
+    case "read":
+      return tense === "present" ? "Reading" : "Read";
     default:
       return null;
   }
 };
 
-export interface DocumentToolResultProps {
-  type: "create" | "update" | "request-suggestions";
-  result: { id: string; title: string; kind: BlockKind };
+interface DocumentToolResultProps {
+  type: "create" | "update" | "request-suggestions" | "read";
+  result: { id: string; title: string; kind: ArtifactKind; content?: string };
   isReadonly: boolean;
 }
 
@@ -34,12 +42,12 @@ function PureDocumentToolResult({
   result,
   isReadonly,
 }: DocumentToolResultProps) {
-  const { setBlock } = useBlock();
+  const { setArtifact } = useArtifact();
 
   return (
     <button
       type="button"
-      className="bg-background cursor-pointer border py-2 px-3 rounded-xl w-fit flex flex-row gap-3 items-start"
+      className="bg-background cursor-pointer border py-2 px-3 rounded-md w-fit flex flex-row gap-3 items-start"
       onClick={(event) => {
         if (isReadonly) {
           toast.error(
@@ -57,10 +65,10 @@ function PureDocumentToolResult({
           height: rect.height,
         };
 
-        setBlock({
+        setArtifact({
           documentId: result.id,
           kind: result.kind,
-          content: "",
+          content: result.content || "",
           title: result.title,
           isVisible: true,
           status: "idle",
@@ -75,6 +83,8 @@ function PureDocumentToolResult({
           <PencilEditIcon />
         ) : type === "request-suggestions" ? (
           <MessageIcon />
+        ) : type === "read" ? (
+          <EyeIcon />
         ) : null}
       </div>
       <div className="text-left">
@@ -97,12 +107,12 @@ function PureDocumentToolCall({
   args,
   isReadonly,
 }: DocumentToolCallProps) {
-  const { setBlock } = useBlock();
+  const { setArtifact } = useArtifact();
 
   return (
     <button
       type="button"
-      className="cursor pointer w-fit border py-2 px-3 rounded-xl flex flex-row items-start justify-between gap-3"
+      className="cursor pointer w-fit border py-2 px-3 rounded-md flex flex-row items-start justify-between gap-3"
       onClick={(event) => {
         if (isReadonly) {
           toast.error(
@@ -120,8 +130,8 @@ function PureDocumentToolCall({
           height: rect.height,
         };
 
-        setBlock((currentBlock) => ({
-          ...currentBlock,
+        setArtifact((currentArtifact) => ({
+          ...currentArtifact,
           isVisible: true,
           boundingBox,
         }));
@@ -135,6 +145,8 @@ function PureDocumentToolCall({
             <PencilEditIcon />
           ) : type === "request-suggestions" ? (
             <MessageIcon />
+          ) : type === "read" ? (
+            <EyeIcon />
           ) : null}
         </div>
 

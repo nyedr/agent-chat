@@ -7,6 +7,7 @@ interface SearxngSearchOptions {
   engines?: string[];
   language?: string;
   pageno?: number;
+  time_range?: "day" | "week" | "month" | "year";
 }
 
 export interface SearxngSearchResult {
@@ -19,6 +20,7 @@ export interface SearxngSearchResult {
   author?: string;
   iframe_src?: string;
   publishedDate?: string;
+  score?: number;
 }
 
 interface SearxngAnswer {
@@ -38,19 +40,32 @@ export const searchSearxng = async (
   query: string,
   opts?: SearxngSearchOptions
 ): Promise<SearxngApiResponse> => {
-  const searxngURL = getSearxngApiEndpoint();
+  const searxngBaseURL = getSearxngApiEndpoint();
 
-  const url = new URL(`${searxngURL}/search?format=json`);
+  if (!searxngBaseURL) {
+    throw new Error("SEARXNG_API_URL environment variable is not set.");
+  }
+
+  const cleanedBaseURL = searxngBaseURL.replace(/\/$/, "");
+  const searchPath = "/search"; // Define the path separately
+
+  // Use URL constructor for robust path joining and query parameter handling
+  const url = new URL(searchPath, cleanedBaseURL);
+  url.searchParams.append("format", "json"); // Always append format=json
   url.searchParams.append("q", query);
 
   if (opts) {
     Object.keys(opts).forEach((key) => {
       const value = opts[key as keyof SearxngSearchOptions];
-      if (Array.isArray(value)) {
-        url.searchParams.append(key, value.join(","));
-        return;
+      // Only append the parameter if the value is not null or undefined
+      if (value !== null && value !== undefined) {
+        if (Array.isArray(value)) {
+          url.searchParams.append(key, value.join(","));
+        } else {
+          // Ensure value is converted to string before appending
+          url.searchParams.append(key, String(value));
+        }
       }
-      url.searchParams.append(key, value as string);
     });
   }
 

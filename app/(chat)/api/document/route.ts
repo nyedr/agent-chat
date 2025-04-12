@@ -1,9 +1,9 @@
-import { BlockKind } from "@/components/block";
 import {
   saveDocument,
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
 } from "@/app/(chat)/actions";
+import { ArtifactKind } from "@/components/artifact";
 import { Document } from "@/lib/db/schema";
 
 export async function GET(request: Request) {
@@ -40,13 +40,14 @@ export async function POST(request: Request) {
     content,
     title,
     kind,
-  }: { content: string; title: string; kind: BlockKind } = await request.json();
+  }: { content: string; title: string; kind: ArtifactKind } =
+    await request.json();
 
   const document = await saveDocument({
     id,
     content,
     title,
-    kind: kind as "text" | "code" | "image",
+    kind,
     chatId,
   });
 

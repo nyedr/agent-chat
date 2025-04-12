@@ -28,8 +28,6 @@ function PureMessages({
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
-  console.log("All messages:", messages);
-
   // Handle rate limit error
   const handleError = async (error: any) => {
     if (error?.response?.status === 429) {

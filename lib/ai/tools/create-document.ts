@@ -11,7 +11,7 @@ interface CreateDocumentProps {
   chatId: string;
 }
 
-interface CreateDocumentToolResult {
+export interface CreateDocumentToolResult {
   id: string;
   title: string;
   kind: string;

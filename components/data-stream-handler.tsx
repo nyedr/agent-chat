@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { BlockKind } from "./block";
-import { initialBlockData, useBlock } from "@/hooks/use-block";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import { useChat } from "@ai-sdk/react";
+import { initialArtifactData, useArtifact } from "@/hooks/use-artifact";
+import { artifactDefinitions, ArtifactKind } from "./artifact";
+import { Suggestion } from "@/lib/db/schema";
 
 // Expanded type to include all expected custom data payloads
 export type DataStreamDelta = {
   type:
     | "text-delta"
     | "code-delta"
-    | "spreadsheet-delta"
+    | "sheet-delta"
+    | "image-delta"
     | "title"
     | "id"
     | "suggestion"
     | "clear"
     | "finish"
-    | "user-message-id"
     | "kind"
     // Deep Research specific types
     | "progress-init"
@@ -27,15 +28,21 @@ export type DataStreamDelta = {
     | "source-delta"
     | "warning" // Handle potential warning type
     | "complete" // Backend sends this on success
-    | "error"; // Backend sends this on error
-  content: any; // Use 'any' for simplicity, parse based on type
+    | "error" // Backend sends this on error
+    // Python Interpreter types (via backend endpoint)
+    | "python-execution-start"
+    | "python-stdout-delta"
+    | "python-stderr-delta"
+    | "python-execution-end"
+    | "python-error";
+  content: string | Suggestion | any;
 };
 
 export function DataStreamHandler({ id }: { id: string }) {
   const { data: dataStream } = useChat({ id });
-  const { setBlock } = useBlock();
   const { addActivity, addSource, initProgress, setDepth, updateProgress } =
     useDeepResearch();
+  const { artifact, setArtifact, setMetadata } = useArtifact();
   const lastProcessedIndex = useRef(-1);
   const researchCompleted = useRef(false);
 
@@ -130,103 +137,136 @@ export function DataStreamHandler({ id }: { id: string }) {
         return;
       }
 
-      // --- Handle Block Context Updates (Original Logic) ---
-      if (delta.type === "user-message-id") {
-        // This likely relates to message sync, not block or research state
+      // --- Artifact Handling (New Logic based on reference) ---
+
+      // Check if the delta type is relevant for artifacts before proceeding
+      const artifactDeltaTypes = [
+        "text-delta",
+        "code-delta",
+        "sheet-delta",
+        "image-delta",
+        "title",
+        "id",
+        "suggestion",
+        "clear",
+        "finish",
+        "kind",
+      ];
+
+      // Define Python specific delta types (execution via backend)
+      const pythonDeltaTypes: DataStreamDelta["type"][] = [
+        "python-execution-start",
+        "python-stdout-delta",
+        "python-stderr-delta",
+        "python-execution-end",
+        "python-error",
+      ];
+
+      // Handle Python Deltas (Example: Log them for now)
+      if ((pythonDeltaTypes as string[]).includes(delta.type)) {
+        console.log(
+          `[DataStreamHandler] Received Python delta (${delta.type}):`,
+          delta.content
+        );
+        // TODO: Implement specific UI updates based on python deltas
+        // e.g., update a console display, show status indicators
+        return; // Handled (by logging), exit early
+      }
+
+      if (!artifactDeltaTypes.includes(delta.type)) {
+        // If it's not a known artifact delta or a deep research delta, log and skip
+        console.warn("[DataStreamHandler] Unhandled delta type:", delta.type);
         return;
       }
 
-      // Only update block if it's not a deep research type handled above
-      setBlock((draftBlock) => {
-        if (!draftBlock) {
-          return { ...initialBlockData, status: "streaming" };
-        }
+      // Find the corresponding artifact definition
+      const artifactDefinition = artifactDefinitions.find(
+        (def) => def.kind === artifact.kind
+      );
+
+      // Call the artifact-specific stream handler if it exists
+      if (artifactDefinition?.onStreamPart) {
+        artifactDefinition.onStreamPart({
+          streamPart: delta,
+          setArtifact,
+          setMetadata,
+        });
+      }
+
+      // Update common artifact properties (id, title, kind, clear, finish)
+      setArtifact((draftArtifact) => {
+        // Ensure draftArtifact exists, initialize if not
+        const currentArtifact = draftArtifact || {
+          ...initialArtifactData,
+          status: "streaming",
+        };
 
         switch (delta.type) {
           case "id":
             return {
-              ...draftBlock,
+              ...currentArtifact,
               documentId: delta.content as string,
               status: "streaming",
             };
-
           case "title":
             return {
-              ...draftBlock,
+              ...currentArtifact,
               title: delta.content as string,
               status: "streaming",
             };
-
           case "kind":
-            return {
-              ...draftBlock,
-              kind: delta.content as BlockKind,
-              status: "streaming",
-            };
-
-          case "text-delta":
-            return {
-              ...draftBlock,
-              content: draftBlock.content + (delta.content as string),
-              isVisible:
-                draftBlock.status === "streaming" &&
-                draftBlock.content.length > 400 &&
-                draftBlock.content.length < 450
-                  ? true
-                  : draftBlock.isVisible,
-              status: "streaming",
-            };
-
-          case "code-delta":
-            return {
-              ...draftBlock,
-              content: delta.content as string,
-              isVisible:
-                draftBlock.status === "streaming" &&
-                draftBlock.content.length > 300 &&
-                draftBlock.content.length < 310
-                  ? true
-                  : draftBlock.isVisible,
-              status: "streaming",
-            };
-          case "spreadsheet-delta":
-            return {
-              ...draftBlock,
-              content: delta.content as string,
-              isVisible: true,
-              status: "streaming",
-            };
+            // Ensure kind is updated correctly based on content
+            const newKind = delta.content as ArtifactKind;
+            // Only update if the kind is actually different
+            if (currentArtifact.kind !== newKind) {
+              console.log(
+                `[DataStreamHandler] Updating artifact kind to: ${newKind}`
+              );
+              return {
+                ...currentArtifact,
+                kind: newKind,
+                // Reset content/metadata if kind changes? Depends on desired behavior.
+                // content: '', // Example: reset content
+                status: "streaming",
+              };
+            }
+            return currentArtifact; // No change if kind is the same
 
           case "clear":
             return {
-              ...draftBlock,
+              ...currentArtifact,
               content: "",
               status: "streaming",
             };
-
           case "finish":
             return {
-              ...draftBlock,
+              ...currentArtifact,
               status: "idle",
             };
-
           default:
-            console.warn(
-              "[DataStreamHandler] Unhandled delta type for block update:",
-              delta.type
-            );
-            return draftBlock;
+            // Ensure we don't warn about handled python deltas here
+            if (
+              artifactDeltaTypes.includes(delta.type) &&
+              !(pythonDeltaTypes as string[]).includes(delta.type)
+            ) {
+              console.warn(
+                `[DataStreamHandler] Artifact delta type '${delta.type}' reached default switch case. Was it handled by onStreamPart?`
+              );
+            }
+            return currentArtifact;
         }
       });
     });
   }, [
     dataStream,
-    setBlock,
     addActivity,
     addSource,
     initProgress,
     setDepth,
     updateProgress,
+    artifact,
+    setArtifact,
+    setMetadata,
   ]);
 
   return null;

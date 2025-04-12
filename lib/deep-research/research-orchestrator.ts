@@ -1,24 +1,22 @@
 import { DataStreamWriter, generateText } from "ai";
 
 import { SearchModule, ResearchSearchResult } from "./modules/search";
-import { SourceCuratorModule } from "./modules/source-curator";
 import { ContentScraperModule } from "./modules/content-scraper";
 import { VectorStoreManager } from "./modules/vector-store-manager";
 import { InsightGeneratorModule, Learning } from "./modules/insight-generator";
-import { FactualVerificationModule } from "./modules/factual-verification";
 import { ReportGeneratorModule } from "./modules/report-generator";
 import { WorkflowConfig, ResearchOptions } from "./types";
 import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 import { ModelsByCapability } from "../ai/models";
 import { ScrapeResult } from "../search/types";
+import { curateSources } from "./utils";
 
 /**
- * Final research result
+ * Final research result.
  */
 export interface ResearchResult {
   query: string;
   insights: string[];
-  factualAnswer: string;
   finalReport: string;
   sources: Record<string, string>;
   metrics: {
@@ -31,20 +29,17 @@ export interface ResearchResult {
 }
 
 // Constants for step calculation
-const STEPS_PER_QUERY_ITERATION = 5; // Rough estimate: search, curate, scrape, vectorize, insight
-const FINAL_REPORT_STEPS = 2; // verify, report
-const INITIAL_PLANNING_STEPS = 1; // For the _planInitialResearch step
+const STEPS_PER_QUERY_ITERATION = 4; // Search, Scrape, Vectorize, Insight
+const FINAL_REPORT_STEPS = 1; // Report Generation
 
 /**
  * Central orchestrator for managing the deep research workflow.
  */
 export class ResearchOrchestrator {
   private searchModule: SearchModule;
-  private curatorModule: SourceCuratorModule;
   private scraperModule: ContentScraperModule;
   private vectorStore: VectorStoreManager;
   private insightModule: InsightGeneratorModule;
-  private verificationModule: FactualVerificationModule;
   private reportModule: ReportGeneratorModule;
   private dataStream: DataStreamWriter | null;
   private llmProvider: OpenAICompatibleProvider<string, string, string>; // Store LLM provider for potential usage
@@ -70,7 +65,6 @@ export class ResearchOrchestrator {
     this.options = options; // Store options
 
     this.searchModule = new SearchModule();
-    this.curatorModule = new SourceCuratorModule(llmProvider, models.light);
     this.scraperModule = new ContentScraperModule();
 
     // Initialize vector store for semantic search and context retrieval
@@ -83,10 +77,6 @@ export class ResearchOrchestrator {
       this.vectorStore
     );
 
-    this.verificationModule = new FactualVerificationModule(
-      llmProvider,
-      models.light
-    );
     this.reportModule = new ReportGeneratorModule(
       llmProvider,
       models.reasoning
@@ -104,13 +94,13 @@ export class ResearchOrchestrator {
     query: string,
     config: WorkflowConfig
   ): Promise<ResearchResult> {
+    console.log(`Starting deep research for query: "${query}"`);
     const startTime = Date.now();
     const timeLimit = config.timeout || 4.5 * 60 * 1000;
 
     const researchState = {
       allSources: {} as Record<string, string>,
       allLearnings: [] as Learning[], // Structured learnings with citations
-      factualAnswer: "",
       currentDepth: 0,
       maxDepth: config.maxDepth,
       completedSteps: 0,
@@ -122,6 +112,7 @@ export class ResearchOrchestrator {
       }>,
       shouldContinue: true,
       researchQueue: [] as string[],
+      originalQuery: query, // Store the original query
     };
 
     try {
@@ -135,17 +126,15 @@ export class ResearchOrchestrator {
       // Determine the first query to process
       let currentQuery = researchState.researchQueue.shift();
       if (!currentQuery) {
-        console.warn("No initial sub-queries generated. Using original query.");
+        console.log("No initial sub-queries generated. Using original query.");
         currentQuery = query; // Use original query if planning yielded nothing
       }
 
       // Calculate initial total steps AFTER determining the first query
-      researchState.totalSteps = this._calculateTotalSteps(
-        researchState,
-        !!currentQuery
-      );
+      // No need to call _calculateTotalSteps here, updateProgressInit will do it
+      // researchState.totalSteps = this._calculateTotalSteps(researchState, !!currentQuery);
 
-      // Send initial progress
+      // Send initial progress (this will calculate initial steps)
       this.updateProgressInit(researchState);
       this.updateProgress(
         researchState,
@@ -155,29 +144,16 @@ export class ResearchOrchestrator {
         } angles.`
       );
 
-      await this.vectorStore.clear();
+      await this.vectorStore.clear(); // Clear previous vector store state
 
       // --- Main Research Loop ---
-      console.log(
-        `Starting research loop check. Depth: ${researchState.currentDepth}/${
-          researchState.maxDepth
-        }, HaveQuery: ${!!currentQuery}, ShouldContinue: ${
-          researchState.shouldContinue
-        }, Time OK: ${Date.now() - startTime < timeLimit}`
-      ); // Debug log
-
       while (
         researchState.currentDepth < researchState.maxDepth &&
         researchState.shouldContinue &&
-        currentQuery && // Ensure we have a query to process
+        currentQuery &&
         Date.now() - startTime < timeLimit
       ) {
         researchState.currentDepth++; // Increment depth at the START of the loop iteration
-        console.log(
-          `--- Iteration Start: Depth ${
-            researchState.currentDepth
-          }, Query: ${currentQuery.substring(0, 50)}... ---`
-        ); // Debug log
 
         this.updateProgress(
           researchState,
@@ -195,11 +171,20 @@ export class ResearchOrchestrator {
           researchState
         );
         if (sourceResults.length > 0) {
-          researchState.completedSteps += 2; // Increment for successful search + curate
+          researchState.completedSteps++; // Increment for successful search+curation
+          this.updateProgress(
+            researchState,
+            "activity-delta",
+            `Curated ${sourceResults.length} sources.`
+          );
         } else {
-          console.log(`No sources found for query: ${currentQuery}`);
+          // No sources found, skip rest of iteration for this query
           iterationSuccessful = false;
-          // Skip to next query if available
+          this.updateProgress(
+            researchState,
+            "warning",
+            `No sources found for query: ${currentQuery}.`
+          );
         }
 
         // --- Phase 2: Scrape ---
@@ -208,14 +193,23 @@ export class ResearchOrchestrator {
           processedContents = await this.scrapeAndConvertContent(
             sourceResults,
             researchState,
-            query
+            query // Pass originalQuery here
           );
           if (processedContents.length > 0) {
             researchState.completedSteps++; // Increment for successful scrape
+            this.updateProgress(
+              researchState,
+              "activity-delta",
+              `Scraped content from ${processedContents.length} sources.`
+            );
           } else {
-            console.log(`No content scraped for query: ${currentQuery}`);
+            // No content scraped, maybe still generate insights later?
             iterationSuccessful = false;
-            // Continue, might still generate insights from vector store later?
+            this.updateProgress(
+              researchState,
+              "warning",
+              `Failed to scrape any content for current query.`
+            );
           }
         }
 
@@ -229,29 +223,63 @@ export class ResearchOrchestrator {
           );
           if (addedDocsCount > 0) {
             researchState.completedSteps++; // Increment for successful vectorization
+            this.updateProgress(
+              researchState,
+              "activity-delta",
+              `Vectorized content from ${addedDocsCount} sources.`
+            );
+          } else {
+            this.updateProgress(
+              researchState,
+              "warning",
+              `No valid documents added to vector store.`
+            );
           }
         }
 
         // --- Phase 4: Generate Insights ---
-        let insightResult: any = { learnings: [], followUpQuestions: [] };
-        // Generate insights even if scrape/vectorize failed for this specific iter,
-        // as vector store might have context from previous iterations.
-        if (iterationSuccessful || researchState.allLearnings.length > 0) {
-          // Check if *any* useful work done in loop or prev loops
+        let insightResult: any = { learnings: [], followUpQuestions: [] }; // Initialize for type safety
+        // Always attempt insight generation if we have a vector store or previous learnings
+        if (this.vectorStore || researchState.allLearnings.length > 0) {
           insightResult = await this.aggregateContextAndGenerateInsights(
             currentQuery,
-            query,
+            query, // Pass originalQuery here
             researchState
           );
-          if (insightResult.learnings.length > 0) {
+          if (insightResult && insightResult.learnings.length > 0) {
             researchState.completedSteps++; // Increment for successful insight generation
+            researchState.allLearnings.push(...insightResult.learnings);
+            researchState.iterations.push({
+              // Track queries and resulting insights
+              query: currentQuery,
+              context: "", // Not storing full context here
+              insights: insightResult.learnings.map((l: Learning) => l.text),
+            });
+            this.updateProgress(
+              researchState,
+              "activity-delta",
+              `Generated ${insightResult.learnings.length} insights.`
+            );
+          } else {
+            // Log if no insights were generated for this query
+            console.log(`No new insights generated for query: ${currentQuery}`);
+            this.updateProgress(
+              researchState,
+              "warning",
+              `No insights generated for query: ${currentQuery}.`
+            );
           }
-          researchState.allLearnings.push(...insightResult.learnings);
-          researchState.iterations.push({
-            query: currentQuery,
-            context: "",
-            insights: insightResult.learnings.map((l: any) => l.text),
-          }); // Simplified iteration tracking
+        } else {
+          // Skip insight generation if scrape/vectorize failed AND no prior learnings exist
+          console.log(
+            `Skipping insight generation for query: ${currentQuery} due to lack of scraped content and prior context.`
+          );
+          this.updateProgress(
+            researchState,
+            "warning",
+            `Skipping insight generation for ${currentQuery}.`
+          );
+          iterationSuccessful = false;
         }
 
         // --- Queue Management & Recalculation ---
@@ -264,16 +292,13 @@ export class ResearchOrchestrator {
               !researchState.iterations.some((iter) => iter.query === q)
           );
           if (newQuestions.length > 0) {
-            researchState.researchQueue.unshift(...newQuestions.slice(0, 3));
+            researchState.researchQueue.unshift(...newQuestions.slice(0, 3)); // Add to front for depth-first feel
             addedNewQuestions = true;
-            researchState.totalSteps = this._calculateTotalSteps(
-              researchState,
-              !!currentQuery
-            ); // Recalculate total steps
+            // _calculateTotalSteps will be called by the next updateProgress call
             this.updateProgress(
               researchState,
               "activity-delta",
-              `Added ${newQuestions.length} new research angles. Total steps updated to ${researchState.totalSteps}`
+              `Added ${newQuestions.length} new research angles.`
             );
           }
         }
@@ -282,35 +307,7 @@ export class ResearchOrchestrator {
         if (researchState.researchQueue.length > 0) {
           currentQuery = researchState.researchQueue.shift()!;
         } else {
-          // Attempt variations only if we are not stopping
-          if (
-            researchState.currentDepth < researchState.maxDepth - 1 &&
-            Date.now() - startTime < timeLimit * 0.9
-          ) {
-            const variations = this.generateQueryVariations(
-              query,
-              researchState.allLearnings.map(
-                (learning: Learning) => learning.text
-              )
-            );
-            if (variations.length > 0) {
-              researchState.researchQueue.push(...variations);
-              currentQuery = researchState.researchQueue.shift()!;
-              researchState.totalSteps = this._calculateTotalSteps(
-                researchState,
-                true
-              ); // Recalculate incl. new current query
-              this.updateProgress(
-                researchState,
-                "activity-delta",
-                `Generated ${variations.length} query variations. Total steps updated to ${researchState.totalSteps}`
-              );
-            } else {
-              currentQuery = undefined; // No more variations
-            }
-          } else {
-            currentQuery = undefined; // Stop if near depth/time limit
-          }
+          currentQuery = undefined; // Stop if queue is empty
         }
 
         if (!currentQuery) {
@@ -321,28 +318,11 @@ export class ResearchOrchestrator {
           );
           researchState.shouldContinue = false; // Explicitly stop the loop
         }
-        console.log(
-          `--- Iteration End: Depth ${researchState.currentDepth} ---`
-        ); // Debug log
       } // End while loop
 
-      console.log("Research loop finished."); // Debug log
+      console.log("Research loop finished.");
 
-      // --- Phase 5: Factual verification ---
-      this.updateProgress(
-        researchState,
-        "activity-delta",
-        "Verifying factual accuracy..."
-      );
-      const verificationResult =
-        await this.verificationModule.verifyFactualAccuracy(
-          researchState.allLearnings,
-          query
-        );
-      researchState.factualAnswer = verificationResult;
-      researchState.completedSteps++; // Increment for verification step
-
-      // --- Phase 6: Report generation ---
+      // --- Final Report Generation ---
       this.updateProgress(
         researchState,
         "activity-delta",
@@ -350,11 +330,11 @@ export class ResearchOrchestrator {
       );
       const finalReport = await this.reportModule.generateFinalReport(
         researchState.allLearnings,
-        query
+        query // TODO: Update ReportGeneratorModule to accept & use state.originalQuery for a more focused prompt
       );
       researchState.completedSteps++;
 
-      // Set final totalSteps accurately
+      // Set final totalSteps accurately BEFORE sending final update
       researchState.totalSteps = researchState.completedSteps;
 
       this.updateProgress(researchState, "complete", `Research complete.`);
@@ -364,7 +344,6 @@ export class ResearchOrchestrator {
         insights: researchState.allLearnings.map(
           (learning: Learning) => learning.text
         ),
-        factualAnswer: researchState.factualAnswer,
         finalReport: finalReport,
         sources: researchState.allSources,
         metrics: {
@@ -373,23 +352,39 @@ export class ResearchOrchestrator {
           sourcesExamined: Object.keys(researchState.allSources).length,
         },
         completedSteps: researchState.completedSteps,
-        totalSteps: researchState.totalSteps, // Use the final accurate count
+        totalSteps: researchState.totalSteps, // Use final accurate total
       };
       return result;
-    } catch (error) {
-      console.error("Error in deep research workflow:", error);
-      // Ensure final steps reflect reality even on error, if possible
+    } catch (error: any) {
+      console.error("Error during deep research workflow:", error);
+      // Ensure final steps reflect reality even on error
       researchState.totalSteps =
         researchState.completedSteps > 0
           ? researchState.completedSteps
-          : FINAL_REPORT_STEPS; // Best guess on error
-      // ... (rest of error handling) ...
+          : FINAL_REPORT_STEPS; // Use completed or 1
+      // Send error update
+      this.updateProgress(
+        researchState,
+        "error",
+        `Error during research: ${error.message || error}`
+      );
+      // Return a partial/error result
       return {
-        /* ... partial/error result ... */
+        query,
+        insights: researchState.allLearnings.map((l) => l.text),
+        finalReport: `Error during research: ${error.message || error}`,
+        sources: researchState.allSources,
+        metrics: {
+          timeElapsed: Date.now() - startTime,
+          iterationsCompleted: researchState.currentDepth,
+          sourcesExamined: Object.keys(researchState.allSources).length,
+        },
+        completedSteps: researchState.completedSteps,
+        totalSteps: researchState.totalSteps, // Use final calculated total
       } as ResearchResult;
     } finally {
       console.log(
-        `Research finished. Completed Steps: ${researchState.completedSteps}, Total Steps: ${researchState.totalSteps}, Depth: ${researchState.currentDepth}`
+        `Research finished. Final state - Completed Steps: ${researchState.completedSteps}, Total Steps: ${researchState.totalSteps}, Depth: ${researchState.currentDepth}`
       );
       // Cleanup logic if needed
     }
@@ -417,24 +412,12 @@ export class ResearchOrchestrator {
 
     // If we have accumulated some insights, use them to enhance the search
     if (state.allLearnings.length > 0 && state.currentDepth > 1) {
-      // Generate semantic variations of the query based on insights
-      const queryVariations = this.generateQueryVariations(
-        query,
-        state.allLearnings.map((learning: Learning) => learning.text)
-      );
-
-      // Search with all variations and merge results
+      // Query variation generation removed, just use the current query
+      searchResults = await this.searchModule.searchWeb(query);
       this.updateProgress(
         state,
         "activity-delta",
-        `Searching with ${queryVariations.length} query variations`
-      );
-
-      searchResults = await this.searchModule.searchMultiple(
-        queryVariations,
-        undefined, // no year filter
-        5, // results per query
-        true // remove duplicates
+        `Performing standard search for depth ${state.currentDepth}.`
       );
     } else {
       // Standard search with just the single query
@@ -451,88 +434,14 @@ export class ResearchOrchestrator {
     const maxResults = Math.max(10 - state.currentDepth, 3); // At least 3, decreasing with depth
 
     // Curate the sources
-    const curatedResults = await this.curatorModule.curateSources(
+    const curatedResults = await curateSources(
       searchResults,
       query,
       maxResults
     );
 
-    // The increments are now handled in the main loop after this function returns
+    // Incrementing completedSteps is handled in the main loop
     return curatedResults;
-  }
-
-  /**
-   * Generates semantic variations of a query based on accumulated insights.
-   *
-   * @param query - Original query
-   * @param insights - Array of insights from previous research
-   * @returns Array of query variations
-   */
-  private generateQueryVariations(query: string, insights: string[]): string[] {
-    // Always include the original query
-    const variations = [query];
-
-    // Extract key terms from insights (simple approach)
-    const recentInsights = insights.slice(-3); // Use only the most recent insights
-
-    // For each insight, create a query variation combining the original query with the insight
-    recentInsights.forEach((insight) => {
-      // Extract key phrases from the insight (simplified approach)
-      const keyPhrases = this.extractKeyPhrases(insight);
-
-      // Add variations that combine the query with key phrases
-      keyPhrases.forEach((phrase) => {
-        if (
-          phrase.length > 5 &&
-          !query.toLowerCase().includes(phrase.toLowerCase())
-        ) {
-          variations.push(`${query} ${phrase}`);
-        }
-      });
-    });
-
-    // Ensure we don't have too many variations
-    return variations.slice(0, 5); // Limit to 5 variations
-  }
-
-  /**
-   * Extracts key phrases from text (simplified approach).
-   *
-   * @param text - Text to extract phrases from
-   * @returns Array of key phrases
-   */
-  private extractKeyPhrases(text: string): string[] {
-    // Split into sentences
-    const sentences = text.split(/[.!?]+/).filter((s) => s.trim().length > 0);
-
-    // Extract noun phrases (simplified approach - just take substantial segments)
-    const phrases: string[] = [];
-
-    for (const sentence of sentences) {
-      // Remove common stop words and split by common separators
-      const cleaned = sentence
-        .replace(
-          /\b(the|and|or|in|on|at|a|an|of|for|to|with|by|is|are|was|were)\b/gi,
-          " "
-        )
-        .trim();
-
-      const fragments = cleaned.split(/[,;:\(\)]/);
-
-      // Add fragments that are substantial enough to be meaningful
-      fragments.forEach((fragment) => {
-        const trimmed = fragment.trim();
-        if (
-          trimmed.length > 10 &&
-          trimmed.split(" ").length >= 2 &&
-          trimmed.split(" ").length <= 5
-        ) {
-          phrases.push(trimmed);
-        }
-      });
-    }
-
-    return phrases;
   }
 
   /**
@@ -545,7 +454,7 @@ export class ResearchOrchestrator {
   private async scrapeAndConvertContent(
     sources: ResearchSearchResult[],
     state: any,
-    originalQuery: string
+    originalQuery: string // Receive originalQuery
   ): Promise<ScrapeResult[]> {
     this.updateProgress(
       state,
@@ -568,7 +477,6 @@ export class ResearchOrchestrator {
 
     // Use the explicitly passed original query
     const queryToUse = originalQuery;
-    const extractTopKChunks = this.options.extract_top_k_chunks;
 
     // Log if the query is missing (shouldn't happen now but good practice)
     if (!queryToUse) {
@@ -582,8 +490,7 @@ export class ResearchOrchestrator {
     // Use the processUrls method from ContentScraperModule
     const results = await this.scraperModule.processUrls(
       urlsToScrape,
-      queryToUse, // Pass the guaranteed original query
-      extractTopKChunks // Pass the chunk parameter
+      queryToUse // Pass the guaranteed original query
     );
 
     // The increment is handled in the main loop after this function returns
@@ -606,11 +513,8 @@ export class ResearchOrchestrator {
     const documentsToAdd = [];
 
     for (const result of scrapeResults) {
-      // Prioritize relevant chunks if they exist and are not empty
-      const contentToUse =
-        result.relevant_chunks && result.relevant_chunks.length > 0
-          ? result.relevant_chunks.join("\n\n") // Join chunks
-          : result.processed_content; // Fallback to full processed content
+      // Use the full processed content now that chunking is removed
+      const contentToUse = result.processed_content;
 
       // Only add if we have content to use
       if (result.success && contentToUse && contentToUse.trim()) {
@@ -629,16 +533,20 @@ export class ResearchOrchestrator {
         // Also update the sources tracked in the state
         state.allSources[result.url] = result.title || result.url;
       } else if (!result.success) {
+        // Handle specific scrape failures reported by the backend
         this.updateProgress(
           state,
           "warning",
-          `Skipping failed scrape for ${result.url}: ${result.error}`
+          `Skipping failed scrape for ${result.url}: ${
+            result.error || "Unknown error"
+          }`
         );
-      } else {
+      } else if (!contentToUse || !contentToUse.trim()) {
+        // Check specifically for empty content after successful scrape
         this.updateProgress(
           state,
           "warning",
-          `Skipping ${result.url} due to empty content or lack of relevant chunks.`
+          `Skipping ${result.url} due to empty processed content after successful scrape.`
         );
       }
     }
@@ -677,7 +585,7 @@ export class ResearchOrchestrator {
    */
   private async aggregateContextAndGenerateInsights(
     specificQuery: string,
-    originalQuery: string,
+    originalQuery: string, // Receive originalQuery
     state: any
   ) {
     this.updateProgress(
@@ -689,43 +597,11 @@ export class ResearchOrchestrator {
     // Generate insights using the specific query via the enhanced insight module
     const insightResult = await this.insightModule.generateInsights(
       specificQuery,
-      originalQuery
+      originalQuery // Pass originalQuery
     );
 
     // The increment is handled in the main loop after this function returns
     return insightResult;
-  }
-
-  /**
-   * Reformulates a query when it doesn't yield good results.
-   *
-   * @param query - Original query
-   * @param state - Current research state
-   * @returns Reformulated query
-   */
-  private reformulateQuery(query: string, state: any): string {
-    // Simple reformulation - could be expanded with LLM-based reformulation
-    const prefixes = [
-      "latest research on",
-      "detailed information about",
-      "comprehensive guide to",
-      "expert analysis of",
-      "current understanding of",
-    ];
-
-    // Get a prefix we haven't used yet
-    const usedQueries = state.iterations.map((i: any) => i.query);
-    const availablePrefixes = prefixes.filter(
-      (p) => !usedQueries.some((q: string) => q.startsWith(p))
-    );
-
-    if (availablePrefixes.length > 0) {
-      const prefix = availablePrefixes[0];
-      return `${prefix} ${query}`;
-    }
-
-    // If all prefixes used, just return original
-    return query;
   }
 
   /**
@@ -740,6 +616,22 @@ export class ResearchOrchestrator {
       return;
     }
 
+    // Recalculate total steps *before* sending the update
+    // Pass true if queue is not empty OR if we are in the final report stage (type === 'complete')
+    // This ensures the estimate includes the 'current' item being processed or the final step.
+    const includeCurrentEstimate =
+      state.researchQueue.length > 0 || type === "complete";
+    const currentTotalSteps = this._calculateTotalSteps(
+      state,
+      includeCurrentEstimate
+    );
+
+    // Update state's totalSteps if it changed (optional, but good practice)
+    // Avoid setting totalSteps during 'complete' as it should be final by then.
+    if (type !== "complete") {
+      state.totalSteps = currentTotalSteps;
+    }
+
     const payload = {
       type,
       content: {
@@ -747,7 +639,10 @@ export class ResearchOrchestrator {
         current: state.currentDepth,
         max: state.maxDepth,
         completedSteps: state.completedSteps,
-        totalSteps: state.totalSteps, // Send the latest calculated total
+        // Send the state's totalSteps which was just updated,
+        // UNLESS it's the 'complete' message, then send completedSteps as total.
+        totalSteps:
+          type === "complete" ? state.completedSteps : state.totalSteps,
         timestamp: new Date().toISOString(),
       },
     };
@@ -760,46 +655,59 @@ export class ResearchOrchestrator {
       );
     }
 
+    // Log all updates for debugging
+    // console.log(`[Orchestrator] Sending Progress (${type}):`, JSON.stringify(payload));
+
     this.dataStream.writeData(payload);
   }
 
   /**
-   * Calculates the estimated total steps.
-   * Simpler version focusing on completed + current + queue + final.
+   * Calculates the estimated total steps based on dynamic averages and depth.
    */
   private _calculateTotalSteps(
     state: any,
     includeCurrentQueryEstimate = false
   ): number {
-    const stepsPerIteration = STEPS_PER_QUERY_ITERATION;
-    const currentDepth = state.currentDepth; // Get current depth
+    // Configuration constants
+    const FINAL_REPORT_STEPS = 1; // Report Generation is one final step
+    const BASE_STEPS_PER_QUERY_ITERATION = 4; // Search, Scrape, Vectorize, Insight
 
-    // Estimate steps for the query currently being processed (if applicable)
-    const currentQuerySteps = includeCurrentQueryEstimate
-      ? stepsPerIteration
-      : 0;
+    const completedSteps = state.completedSteps;
+    const researchQueue = state.researchQueue;
 
-    // Estimate steps for remaining items in the queue ONLY during early depths
-    const remainingQueueSteps =
-      currentDepth < 2 // Only estimate queue steps for depth 0 and 1
-        ? state.researchQueue.length * stepsPerIteration
-        : 0; // Stop estimating queue steps after depth 1
+    // --- Estimate Known Remaining Work ---
+    // Number of queries currently waiting in the queue (+1 if we include the current one being processed/about to be)
+    const knownRemainingQueries =
+      researchQueue.length + (includeCurrentQueryEstimate ? 1 : 0);
 
-    // Base calculation: Completed + Current (optional) + Queue (conditional) + Final
-    const calculatedTotal =
-      state.completedSteps +
-      currentQuerySteps +
-      remainingQueueSteps +
-      FINAL_REPORT_STEPS;
+    const estimatedStepsForKnownQueries =
+      knownRemainingQueries * BASE_STEPS_PER_QUERY_ITERATION;
 
-    // Ensure total is always at least completed + final steps
-    const minimumSteps = state.completedSteps + FINAL_REPORT_STEPS;
+    // --- Total Calculation ---
+    // Sum completed, estimated known remaining, and final report steps.
+    const totalEstimatedSteps =
+      completedSteps + estimatedStepsForKnownQueries + FINAL_REPORT_STEPS;
 
-    console.log(
-      `[_calculateTotalSteps] Depth: ${currentDepth}, Completed: ${state.completedSteps}, CurrentQ: ${currentQuerySteps}, QueueEst: ${remainingQueueSteps}, Final: ${FINAL_REPORT_STEPS} => Max(${calculatedTotal}, ${minimumSteps})`
+    // --- Minimum Bound ---
+    // Ensure total steps is at least the number completed plus minimal required remaining steps.
+    // Minimal remaining: 1 step per known query (if any) + final report steps.
+    // If includeCurrentQueryEstimate is true, it means we are *about* to start one or are doing the final report, so min is 1.
+    const minQueriesOrFinalStep = includeCurrentQueryEstimate ? 1 : 0;
+    // Ensure we account for at least 1 step per *actual* queued item + the current/final step
+    const minimumRequiredRemainingSteps =
+      researchQueue.length + minQueriesOrFinalStep + FINAL_REPORT_STEPS;
+    const minimumTotalSteps = completedSteps + minimumRequiredRemainingSteps;
+
+    // Return the maximum of the calculated estimate and the minimum bound, rounded up.
+    // Ensure it's at least completedSteps + 1 if we aren't done yet.
+    const finalSteps = Math.max(
+      minimumTotalSteps,
+      Math.ceil(totalEstimatedSteps)
     );
-
-    return Math.max(calculatedTotal, minimumSteps);
+    return Math.max(
+      finalSteps,
+      completedSteps + (FINAL_REPORT_STEPS > 0 ? 1 : 0)
+    ); // Ensure it's at least completed + 1
   }
 
   /**
@@ -823,15 +731,23 @@ export class ResearchOrchestrator {
     let prelimContext = "";
     try {
       const preliminarySearchResults = await this.searchModule.searchWeb(query);
+      // Increment step ONLY if planning context search succeeded
+      // This step wasn't explicitly counted before, let's add it if successful.
+      // Note: This might make the BASE_STEPS_PER_QUERY_ITERATION slightly off if planning fails often.
       if (preliminarySearchResults.length > 0) {
-        state.completedSteps++; // Only increment if search actually ran and returned something
+        state.completedSteps++; // Increment here for successful planning search
+        this.updateProgress(
+          state,
+          "activity-delta",
+          `Gathered preliminary context.`
+        );
       }
       const topResults = preliminarySearchResults.slice(0, 3);
       if (topResults.length > 0) {
         prelimContext =
           "Based on initial search results:\n" +
           topResults
-            .map((r) => `- ${r.title || r.url}: ${r.snippet || "No snippet"}`)
+            .map((r) => `- ${r.title || r.url}: ${r.content || "No snippet"}`)
             .join("\n");
       }
     } catch (searchError) {
@@ -839,13 +755,19 @@ export class ResearchOrchestrator {
         "Preliminary search failed, planning without context:",
         searchError
       );
+      // Do not increment completedSteps if search failed
+      this.updateProgress(
+        state,
+        "warning",
+        `Preliminary search failed during planning.`
+      );
     }
 
     const planningPrompt = `You are a research strategist planning a comprehensive investigation on the topic: "${query}".
 
 ${prelimContext}
 
-Generate 3-5 specific sub-queries or research angles that will help explore this topic thoroughly. 
+Generate 3-5 specific sub-queries or research angles that will help explore this topic thoroughly.
 These should cover different aspects, perspectives, or dimensions of the main query.
 The sub-queries should be diverse and complementary, not redundant.
 
@@ -876,48 +798,33 @@ Example: ["First specific sub-query", "Second specific sub-query", "Third specif
         // Validate that it's an array of strings
         if (
           Array.isArray(parsedResult) &&
-          parsedResult.every((item) => typeof item === "string")
+          parsedResult.every((item) => typeof item === "string") &&
+          parsedResult.length > 0 // Ensure non-empty array
         ) {
           subQueries = parsedResult;
         } else {
-          // If not a valid array of strings, fall back to the follow-up questions approach
+          // If not a valid array of strings or empty, fall back
           console.log(
-            "LLM response was not a valid array of strings, falling back to insightModule"
+            "LLM response was not a valid non-empty array of strings, falling back to insightModule"
           );
-          const insightResult = await this.insightModule.generateInsights(
-            prelimContext || query,
-            query
-          );
-          subQueries = insightResult.followUpQuestions || [];
+          // Don't use insight module here, just use original query as fallback
+          subQueries = [query];
         }
 
-        if (subQueries.length === 0) subQueries = [query]; // Fallback
-
-        // Removed verbose progress update here
+        this.updateProgress(
+          state,
+          "activity-delta",
+          `Planned ${subQueries.length} research angles.`
+        );
         return subQueries;
       } catch (parseError) {
         console.error("Error parsing planning LLM response:", parseError);
-        console.log("Falling back to insightModule for research planning");
-
-        // Fall back to the insight module approach if parsing fails
-        const insightResult = await this.insightModule.generateInsights(
-          prelimContext || query,
-          query
-        );
-
-        // Use the follow-up questions as our sub-queries
-        if (insightResult.followUpQuestions.length > 0) {
-          this.updateProgress(
-            state,
-            "activity-delta",
-            `Generated ${
-              insightResult.followUpQuestions.length
-            } research angles: ${insightResult.followUpQuestions.join(", ")}`
-          );
-          return insightResult.followUpQuestions;
-        }
-
         // Last resort fallback
+        this.updateProgress(
+          state,
+          "warning",
+          `Failed to parse planning results, using original query.`
+        );
         return [query];
       }
     } catch (error) {
@@ -930,11 +837,19 @@ Example: ["First specific sub-query", "Second specific sub-query", "Third specif
   /** Sends the initial progress update */
   private updateProgressInit(state: any): void {
     if (!this.dataStream) return;
+
+    // Calculate initial steps *before* sending the init message
+    const initialTotalSteps = this._calculateTotalSteps(
+      state,
+      state.researchQueue.length > 0 // Include estimate if queue has items
+    );
+    state.totalSteps = initialTotalSteps; // Set initial state
+
     this.dataStream.writeData({
       type: "progress-init",
       content: {
         maxDepth: state.maxDepth,
-        totalSteps: state.totalSteps, // Send initial estimate
+        totalSteps: initialTotalSteps, // Send initial estimate
       },
     });
   }

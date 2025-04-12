@@ -47,6 +47,11 @@ dependencies:
       - wikipedia-api
       - fasttext-wheel
 
+      # Plotting
+      - matplotlib
+      - pillow
+      - html2text
+
       # Utilities
       - python-dotenv==1.0.0
 

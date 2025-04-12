@@ -54,7 +54,7 @@
     --input: 234 10% 90%;
     --ring: 168 85% 35%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
     /* Example chart color placeholders */
     --chart-1: 166 79% 40%; /* teal-ish */
@@ -80,7 +80,7 @@
     --secondary-foreground: 0, 0%, 92.55%;
     --muted: 0, 0%, 18%;
     --muted-foreground: 0 0% 70.59%;
-    --accent: 0, 0%, 26%;
+    --accent: 240, 1%, 21%;
     --accent-foreground: 0, 0%, 92.55%;
 
     --destructive: 0 85% 59%;
@@ -90,8 +90,8 @@
     --input: 234 5% 31%;
     --ring: 168 85% 35%;
 
-    /* Same border radius, charts, etc. */
-    --radius: 0.5rem;
+    --radius: 0.75rem;
+
     --chart-1: 166 79% 40%;
     --chart-2: 228 45% 45%;
     --chart-3: 43 74% 66%;
