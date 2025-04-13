@@ -1,11 +1,11 @@
 import React from "react";
-import ChatMarkdown from "./markdown";
-import { Card, CardContent, CardFooter, CardHeader } from "./ui/card";
+import ChatMarkdown from "../markdown";
+import { Card, CardContent, CardFooter, CardHeader } from "../ui/card";
 import { useDeepResearch } from "@/lib/deep-research-context";
-import { Button } from "./ui/button";
+import { Button } from "../ui/button";
 import Image from "next/image";
 import { getFaviconUrl } from "@/lib/utils";
-import { DeepResearchToolResult } from "@/lib/ai/tools";
+import { DeepResearchToolResult } from "@/lib/deep-research/adapter";
 
 interface DeepResearchResultProps {
   data: DeepResearchToolResult["data"];

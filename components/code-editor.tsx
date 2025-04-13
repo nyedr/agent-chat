@@ -8,7 +8,7 @@ import { basicSetup } from "codemirror";
 import React, { memo, useEffect, useRef } from "react";
 import { Suggestion } from "@/lib/db/schema";
 
-type EditorProps = {
+export type EditorProps = {
   content: string;
   onSaveContent: (updatedContent: string, debounce: boolean) => void;
   status: "streaming" | "idle";

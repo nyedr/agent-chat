@@ -8,24 +8,7 @@ import {
 } from "ai";
 import { z } from "zod";
 import { modelsByCapability, myProvider } from "@/lib/ai/models";
-import {
-  createDocument,
-  type CreateDocumentToolResult,
-  deepResearch,
-  type DeepResearchToolResult,
-  searchWeb,
-  type SearchWebResult,
-  updateDocument,
-  type UpdateDocumentToolResult,
-  pythonInterpreter,
-  type PythonInterpreterResult,
-  fileRead,
-  type FileReadResult,
-  fileWrite,
-  type FileWriteResult,
-  scrapeUrl,
-  type ScrapeUrlResult,
-} from "@/lib/ai/tools";
+import { ToolName, createModelTools } from "@/lib/ai/tools";
 
 import { systemPrompt } from "@/lib/ai/prompts";
 import {
@@ -45,32 +28,14 @@ import {
   UPLOADS_DIR,
 } from "@/lib/utils";
 
-import { createSearchTools } from "@/lib/search/tools";
 import { extractMessageContext } from "@/lib/chat/context-extractor";
 import path from "path";
 import { rm } from "fs/promises";
 import fs from "fs";
-import { ImageSearchResult } from "@/lib/search/chains/imageSearchAgent";
-import { VideoSearchResult } from "@/lib/search/chains/videoSearchAgent";
 
-export interface AllowedToolTypes {
-  deepResearch: DeepResearchToolResult;
-  searchWeb: SearchWebResult;
-  createDocument: CreateDocumentToolResult;
-  updateDocument: UpdateDocumentToolResult;
-  fileRead: FileReadResult;
-  fileWrite: FileWriteResult;
-  pythonInterpreter: PythonInterpreterResult;
-  imageSearch: ImageSearchResult[];
-  videoSearch: VideoSearchResult[];
-  scrapeUrl: ScrapeUrlResult;
-}
+const deepResearchTools: ToolName[] = ["deepResearch"];
 
-export type AllowedTool = keyof AllowedToolTypes;
-
-const deepResearchTools: AllowedTool[] = ["deepResearch"];
-
-const allTools: AllowedTool[] = [
+const allTools: ToolName[] = [
   ...deepResearchTools,
   "createDocument",
   "updateDocument",
@@ -81,6 +46,13 @@ const allTools: AllowedTool[] = [
   "pythonInterpreter",
   "fileRead",
   "fileWrite",
+  "listDirectory",
+  "deleteFile",
+  "moveOrRenameFile",
+  "extractStructuredData",
+  "editFile",
+  "createDirectory",
+  "getFileInfo",
 ];
 
 export async function POST(request: Request) {
@@ -176,8 +148,12 @@ export async function POST(request: Request) {
 
   return createDataStreamResponse({
     execute: (dataStream) => {
-      const searchTools = createSearchTools({
+      const tools = createModelTools({
         dataStream,
+        chatId,
+        models: {
+          deepResearch: modelsByCapability.deepResearch,
+        },
         usePreScrapingRerank,
         maxFinalResults,
       });
@@ -203,39 +179,7 @@ export async function POST(request: Request) {
         experimental_activeTools: experimental_deepResearch
           ? deepResearchTools
           : allTools,
-        tools: {
-          fileRead: fileRead({
-            dataStream,
-            chatId,
-          }),
-          fileWrite: fileWrite({
-            dataStream,
-            chatId,
-          }),
-          scrapeUrl: scrapeUrl({
-            dataStream,
-          }),
-          createDocument: createDocument({
-            dataStream,
-            chatId,
-          }),
-          updateDocument: updateDocument({
-            dataStream,
-          }),
-          searchWeb: searchWeb({
-            dataStream,
-          }),
-          imageSearch: searchTools.imageSearchTool,
-          videoSearch: searchTools.videoSearchTool,
-          deepResearch: deepResearch({
-            dataStream,
-            models: modelsByCapability.deepResearch,
-          }),
-          pythonInterpreter: pythonInterpreter({
-            dataStream,
-            chatId,
-          }),
-        },
+        tools,
         onFinish: async ({ response }) => {
           try {
             const assistantMessageId = response.messages

@@ -1,4 +1,3 @@
-import { LinkPreview } from "./ui/link-preview";
 import { useEffect, useRef, useState } from "react";
 import { cn, removeInlineTicks, getRelativePath } from "@/lib/utils";
 import Markdown, { Options } from "react-markdown";
@@ -15,15 +14,12 @@ export default function ChatMarkdown({
   content: string;
   isUserMessage?: boolean;
 }) {
-  // Create a ref to track the rendered content
   const contentRef = useRef<HTMLDivElement>(null);
   const [isContentTruncated, setIsContentTruncated] = useState(false);
 
-  // Check if the content is being truncated
   useEffect(() => {
     if (contentRef.current) {
       const element = contentRef.current;
-      // Check if text is being clipped (scrollWidth > clientWidth indicates overflow)
       const isTruncated =
         element.scrollWidth > element.clientWidth ||
         element.scrollHeight > element.clientHeight;
@@ -34,7 +30,6 @@ export default function ChatMarkdown({
     }
   }, [isContentTruncated]);
 
-  // Define comprehensive markdown options to ensure proper rendering
   const markdownComponentProps: Options = {
     rehypePlugins: [rehypeRaw],
     remarkPlugins: [remarkGfm],
@@ -60,24 +55,20 @@ export default function ChatMarkdown({
           typeof relativeHref === "string" &&
           relativeHref.startsWith("/api/uploads/")
         ) {
-          // It's a download link - extract filename from the link text
-          // node.children[0].value should contain the raw text like "report.pdf"
           const filename = node?.children?.[0]?.value || "file";
 
-          // Render the FilePreview component instead of a standard link
-          return (
-            <FilePreview
-              filename={filename}
-              url={relativeHref}
-              // fileSize={...} // Pass file size here if available later
-            />
-          );
+          return <FilePreview filename={filename} url={relativeHref} />;
         } else {
-          // Default behavior for other links (e.g., external websites)
           return (
-            <LinkPreview className={className} url={href}>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn("text-primary hover:underline", className)}
+              {...props}
+            >
               {children}
-            </LinkPreview>
+            </a>
           );
         }
       },
@@ -144,24 +135,17 @@ export default function ChatMarkdown({
         </h5>
       ),
       p: ({ children, node }: any) => {
-        // Check if the paragraph only contains a component that renders a div
-        // (like FilePreview or potentially our Image component)
         const firstChild = node?.children?.[0];
         const isBlockElementInside =
           firstChild?.type === "element" &&
-          (firstChild?.tagName === "div" || // Direct div check (less robust)
-            // Check if it's our custom anchor link that renders FilePreview OR LinkPreview
+          (firstChild?.tagName === "div" ||
             firstChild?.tagName === "a" ||
-            // Check if it's our custom image component
             firstChild?.tagName === "img");
 
         if (node?.children?.length === 1 && isBlockElementInside) {
-          // If the paragraph solely contains a block-level component,
-          // render the component directly without the <p> wrapper.
           return <>{children}</>;
         }
 
-        // Otherwise, render the paragraph as usual
         return (
           <p
             className={cn(
@@ -210,6 +194,5 @@ export default function ChatMarkdown({
     },
   };
 
-  // Create the markdown component with proper styling
   return <Markdown {...markdownComponentProps}>{content}</Markdown>;
 }

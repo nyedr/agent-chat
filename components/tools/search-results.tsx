@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ExternalLinkIcon } from "./icons";
+import { ExternalLinkIcon } from "../icons";
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";

@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { CodeBlock } from "./code-block";
+import { CodeBlock } from "@/components/code-block";
 import { CheckCircle, AlertTriangle, Loader2 } from "lucide-react";
 import fastDeepEqual from "fast-deep-equal";
 import {

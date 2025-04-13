@@ -1,10 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
-import { cn, formatFileSize, getFileInfoFromUrl } from "@/lib/utils";
+import {
+  cn,
+  fileTypeToArtifactKind,
+  formatFileSize,
+  getFileInfoFromUrl,
+} from "@/lib/utils";
 import { Download, Eye, Loader2, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useArtifact } from "@/hooks/use-artifact";
-import { ArtifactKind } from "@/components/artifact";
 import { toast } from "sonner";
 
 interface FilePreviewProps {
@@ -13,22 +17,6 @@ interface FilePreviewProps {
   downloadable?: boolean;
   viewable?: boolean;
 }
-
-// Map simplified file types to artifact kinds
-const fileTypeToArtifactKind: Record<string, ArtifactKind | null> = {
-  text: "text",
-  code: "code",
-  image: "image",
-  spreadsheet: "sheet",
-  // pdf, document, video, audio, archive currently not viewable as artifacts
-  pdf: null,
-  document: null,
-  video: null,
-  audio: null,
-  archive: null,
-  presentation: null,
-  unknown: null,
-};
 
 export function FilePreview({
   filename,

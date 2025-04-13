@@ -17,7 +17,7 @@ export const scrapeUrl = ({ dataStream }: { dataStream: DataStreamWriter }) =>
     }),
     execute: async ({
       url,
-      crawlingStrategy = "playwright",
+      crawlingStrategy = "http",
     }): Promise<SearchToolResponse> => {
       dataStream.writeData({
         type: "scrape-url-start",

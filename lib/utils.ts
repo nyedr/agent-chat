@@ -17,6 +17,7 @@ import { twMerge } from "tailwind-merge";
 
 import type { Document } from "@/lib/db/schema";
 import path, { join } from "path";
+import { ArtifactKind } from "@/components/artifact";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -456,6 +457,8 @@ export function getFileTypeFromExtension(extension: string): string {
   if (["doc", "docx", "odt"].includes(ext)) return "document";
   if (["ppt", "pptx", "odp"].includes(ext)) return "presentation";
 
+  if (ext === "html") return "html";
+
   // Code Types
   if (
     [
@@ -464,7 +467,6 @@ export function getFileTypeFromExtension(extension: string): string {
       "ts",
       "jsx",
       "tsx",
-      "html",
       "css",
       "json",
       "yaml",
@@ -560,6 +562,22 @@ export function getColorForFileType(type: string): string {
   }
 }
 
+export const fileTypeToArtifactKind: Record<string, ArtifactKind | null> = {
+  text: "text",
+  code: "code",
+  image: "image",
+  spreadsheet: "sheet",
+  html: "html",
+  // pdf, document, video, audio, archive currently not viewable as artifacts
+  pdf: null,
+  document: null,
+  video: null,
+  audio: null,
+  archive: null,
+  presentation: null,
+  unknown: null,
+};
+
 /**
  * Extracts relevant file information from a URL and an optional display name.
  *
@@ -649,4 +667,25 @@ export function getFileInfoFromUrl(
     IconComponent,
     colorClass,
   };
+}
+
+export function formatRelativeDate(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSeconds = Math.round((now.getTime() - date.getTime()) / 1000);
+    const diffMinutes = Math.round(diffSeconds / 60);
+    const diffHours = Math.round(diffMinutes / 60);
+    const diffDays = Math.round(diffHours / 24);
+
+    if (diffSeconds < 60) return `${diffSeconds} sec ago`;
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+    if (diffHours < 24) return `${diffHours} hr ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+
+    // Fallback to simple date format for older dates
+    return date.toLocaleDateString();
+  } catch (e) {
+    return dateString; // Return original string if parsing fails
+  }
 }

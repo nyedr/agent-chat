@@ -32,7 +32,7 @@ export type ArtifactToolbarItem = {
   onClick: (context: ArtifactToolbarContext) => void;
 };
 
-interface ArtifactContent<M = any> {
+export interface ArtifactContent<M = any> {
   title: string;
   content: string;
   mode: "edit" | "diff";

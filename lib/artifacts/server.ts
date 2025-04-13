@@ -2,6 +2,7 @@ import { codeDocumentHandler } from "@/artifacts/code/server";
 import { imageDocumentHandler } from "@/artifacts/image/server";
 import { sheetDocumentHandler } from "@/artifacts/sheet/server";
 import { textDocumentHandler } from "@/artifacts/text/server";
+import { htmlDocumentHandler } from "@/artifacts/html/server";
 import { ArtifactKind } from "@/components/artifact";
 import { DataStreamWriter } from "ai";
 import { Document } from "../db/schema";
@@ -53,7 +54,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         id: args.id,
         title: args.title,
         content: draftContent,
-        kind: config.kind as "text" | "code" | "image",
+        kind: config.kind as ArtifactKind,
         chatId: args.chatId,
       });
 
@@ -70,7 +71,7 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
         id: args.document.id,
         title: args.document.title,
         content: draftContent,
-        kind: config.kind as "text" | "code" | "image",
+        kind: config.kind as ArtifactKind,
       });
 
       return;
@@ -86,6 +87,13 @@ export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
   codeDocumentHandler,
   imageDocumentHandler,
   sheetDocumentHandler,
+  htmlDocumentHandler,
 ];
 
-export const artifactKinds = ["text", "code", "image", "sheet"] as const;
+export const artifactKinds = [
+  "text",
+  "code",
+  "image",
+  "sheet",
+  "html",
+] as const;
