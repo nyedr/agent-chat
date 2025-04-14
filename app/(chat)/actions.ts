@@ -4,24 +4,24 @@ import { cookies } from "next/headers";
 import { and, eq, sql } from "drizzle-orm";
 import {
   generateUUID,
+  getValidatedPath,
   parseChatFromDB,
   parseChatToDB,
   UPLOADS_DIR,
   validateUUID,
 } from "@/lib/utils";
 import { getDb } from "@/lib/db/init";
-import { chat, Document, document, folder, suggestion } from "@/lib/db/schema";
+import { chat, folder, document, type Document } from "@/lib/db/schema";
 import { Message } from "ai";
 import {
   ScrapeProcessResponse,
   ScrapeResult,
   RerankResponse,
-  RerankedDocument,
 } from "@/lib/search/types";
 import { join } from "path";
 import { ArtifactKind } from "@/components/artifact";
 import { readdir } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, writeFile } from "fs";
 
 export async function saveChat({
   id,
@@ -99,45 +99,88 @@ export async function getChatById({ id }: { id: string }) {
     if (!selectedChat) {
       return {
         data: null,
+        documents: [],
+        uploadedFiles: [],
         error: new Error("Chat not found"),
         status: 404,
       };
     }
 
+    const documents = await getDocumentsByChatId({ chatId: id });
+    const uploadedFiles = await getUploadedFiles(id);
+
     return {
       data: selectedChat,
+      documents,
+      uploadedFiles,
       error: null,
       status: 200,
     };
   } catch (error) {
     console.error("Failed to get chat by id:", error);
-    if (error instanceof Error) {
-      return {
-        data: null,
-        error,
-        status: 500,
-      };
-    }
+    const errorMessage =
+      error instanceof Error ? error : new Error("Unknown error");
     return {
       data: null,
-      error: new Error("Unknown error"),
+      documents: [],
+      uploadedFiles: [],
+      error: errorMessage,
       status: 500,
     };
   }
 }
 
-export async function deleteChatById(id: string) {
+export async function deleteByChatId(id: string) {
   try {
+    validateUUID(id);
     const db = await getDb();
-    const result = db.delete(chat).where(eq(chat.id, id)).run();
 
-    if (!result?.changes) {
-      throw new Error("Failed to delete chat");
-    }
+    await db.transaction(async (tx) => {
+      // 1. Find and Delete associated documents FIRST
+      const documentsToDelete = tx
+        .select({ id: document.id }) // Only need ID if logging/checking
+        .from(document)
+        .where(eq(document.chatId, id))
+        .all(); // Fetch IDs to know how many *should* be deleted
 
+      if (documentsToDelete.length > 0) {
+        console.log(
+          `[deleteByChatId:TX] Deleting ${documentsToDelete.length} documents for chat ${id}`
+        );
+        const documentDeleteResult = tx
+          .delete(document)
+          .where(eq(document.chatId, id))
+          .run();
+        console.log(
+          `[deleteByChatId:TX] Deleted ${
+            documentDeleteResult.changes ?? 0
+          } documents.`
+        );
+        // Optional: Check if documentDeleteResult.changes matches documentsToDelete.length
+      } else {
+        console.log(`[deleteByChatId:TX] No documents found for chat ${id}.`);
+      }
+
+      // 2. Now, delete the chat record itself
+      console.log(`[deleteByChatId:TX] Deleting chat record ${id}`);
+      const chatDeleteResult = tx.delete(chat).where(eq(chat.id, id)).run();
+
+      if (!chatDeleteResult?.changes) {
+        // If the chat didn't exist, maybe that's okay, or maybe it's an error?
+        // Throwing an error might be safer if the caller expects the chat to exist.
+        console.warn(
+          `[deleteByChatId:TX] Chat record ${id} deletion resulted in no changes. It might not have existed.`
+        );
+        // throw new Error("Failed to delete chat record, it might not have existed.");
+      }
+    }); // End transaction
+
+    console.log(
+      `[deleteByChatId] Successfully deleted DB records for chat ${id}`
+    );
     return { success: true };
   } catch (error) {
-    console.error("Failed to delete chat:", error);
+    console.error(`[deleteByChatId] Failed for chat ${id}:`, error);
     throw error;
   }
 }
@@ -422,6 +465,15 @@ export async function updateMessageContent(
         return {
           ...msg,
           content,
+          parts: msg.parts?.map((part) => {
+            if (part.type === "text") {
+              return {
+                ...part,
+                text: content,
+              };
+            }
+            return part;
+          }),
         };
       }
       return msg;
@@ -457,46 +509,59 @@ export async function saveDocument({
   kind,
   content,
   chatId,
+  extension,
 }: {
   id: string;
   title: string;
   kind: ArtifactKind;
   content: string;
   chatId?: string;
+  extension?: string;
 }) {
   try {
     validateUUID(id);
-
     const db = await getDb();
 
-    // If chatId is provided (new document), validate it
-    if (chatId) {
-      validateUUID(chatId);
-    }
+    // Check if a document with this ID already exists
+    const existingDoc = db
+      .select({ id: document.id })
+      .from(document)
+      .where(eq(document.id, id))
+      .limit(1)
+      .get();
 
-    // For updates (no chatId), first check if document exists
-    if (!chatId) {
-      const existingDoc = await getDocumentById({ id });
-      if (!existingDoc) {
-        throw new Error(`Document with id ${id} not found for update`);
-      }
-
-      // Update existing document
+    if (existingDoc) {
+      // --- UPDATE Existing Document --- //
+      // Typically called by handlers after initial creation or for non-versioned updates
+      console.log(`[ACTION] Updating document ${id}`);
       const result = db
         .update(document)
         .set({
-          title,
+          title, // Allow updating title
           content,
-          kind,
+          kind, // Allow updating kind?
+          // Do NOT update createdAt, chatId, or extension on update
         })
         .where(eq(document.id, id))
+        // IMPORTANT: Ensure we only update the *latest* if multiple existed (though ID should be unique now)
+        // This WHERE clause might need adjustment if ID wasn't unique. Assuming ID is unique/PK.
         .run();
 
       if (!result?.changes) {
-        throw new Error("Failed to update document");
+        // Log instead of throwing? Update might not change if content is same
+        console.warn(`Document ${id} update resulted in no changes.`);
+        // throw new Error(`Failed to update document ${id}`);
       }
     } else {
-      // Insert new document with chatId
+      // --- INSERT New Document (First Version) --- //
+      // Requires chatId for the first insertion
+      if (!chatId) {
+        throw new Error(
+          `chatId is required when creating the first record for document ${id}`
+        );
+      }
+      console.log(`[ACTION] Inserting first version for document ${id}`);
+      validateUUID(chatId);
       const result = db
         .insert(document)
         .values({
@@ -505,35 +570,21 @@ export async function saveDocument({
           kind,
           content,
           chatId,
+          extension: extension ?? undefined,
           createdAt: new Date().toISOString(),
         })
         .run();
 
       if (!result?.changes) {
-        throw new Error("Failed to save document");
+        throw new Error(
+          `Failed to insert initial document record for id ${id}`
+        );
       }
     }
 
     return { success: true };
   } catch (error) {
-    console.error("Failed to save document:", error);
-    throw error;
-  }
-}
-
-export async function getDocumentById({ id }: { id: string }) {
-  try {
-    validateUUID(id);
-    const db = await getDb();
-    const doc = db
-      .select()
-      .from(document)
-      .where(eq(document.id, id))
-      .orderBy(sql`${document.createdAt} DESC`)
-      .get();
-    return doc;
-  } catch (error) {
-    console.error("Failed to get document by id:", error);
+    console.error(`Failed to save document for id ${id}:`, error);
     throw error;
   }
 }
@@ -576,32 +627,6 @@ export async function getDocumentsById({ id }: { id: string }) {
   }
 }
 
-export async function deleteDocumentsByChatId({ chatId }: { chatId: string }) {
-  try {
-    validateUUID(chatId);
-    const db = await getDb();
-
-    const documents = db
-      .select()
-      .from(document)
-      .where(eq(document.chatId, chatId))
-      .all();
-
-    if (documents.length === 0) {
-      return { success: true };
-    }
-
-    const result = db.delete(document).where(eq(document.chatId, chatId)).run();
-
-    if (!result?.changes) {
-      throw new Error("Failed to delete documents");
-    }
-  } catch (error) {
-    console.error("Failed to delete documents by chat id:", error);
-    throw error;
-  }
-}
-
 export async function deleteDocumentsByIdAfterTimestamp({
   id,
   timestamp,
@@ -613,15 +638,6 @@ export async function deleteDocumentsByIdAfterTimestamp({
     validateUUID(id);
     const db = await getDb();
     await db.transaction(async (tx) => {
-      tx.delete(suggestion)
-        .where(
-          and(
-            eq(suggestion.documentId, id),
-            sql`${suggestion.documentCreatedAt} > ${timestamp.toISOString()}`
-          )
-        )
-        .run();
-
       tx.delete(document)
         .where(
           and(
@@ -633,26 +649,7 @@ export async function deleteDocumentsByIdAfterTimestamp({
     });
     return { success: true };
   } catch (error) {
-    console.error("Failed to delete documents:", error);
-    throw error;
-  }
-}
-
-export async function getSuggestionsByDocumentId({
-  documentId,
-}: {
-  documentId: string;
-}) {
-  try {
-    validateUUID(documentId);
-    const db = await getDb();
-    return db
-      .select()
-      .from(suggestion)
-      .where(eq(suggestion.documentId, documentId))
-      .all();
-  } catch (error) {
-    console.error("Failed to get suggestions:", error);
+    console.error("Failed to delete documents after timestamp:", error);
     throw error;
   }
 }
@@ -747,8 +744,7 @@ export async function deleteFolder(id: string) {
     const db = await getDb();
 
     // First update all chats in this folder to have no folder
-    await db
-      .update(chat)
+    db.update(chat)
       .set({ folder_id: null })
       .where(eq(chat.folder_id, id))
       .run();
@@ -806,34 +802,85 @@ export async function updateChat({
 export async function addChatMessage({
   chatId,
   message,
+  isRetry = false,
 }: {
   chatId: string;
   message: Message;
+  isRetry?: boolean;
 }) {
   try {
     validateUUID(chatId);
+    const db = await getDb();
 
-    const chat = await getChatById({ id: chatId });
+    // 1. Fetch existing chat data
+    const existingChatData = db
+      .select()
+      .from(chat)
+      .where(eq(chat.id, chatId))
+      .get();
 
-    if (!chat.data) {
-      throw new Error("Chat not found");
+    if (!existingChatData) {
+      console.error(`[addChatMessage] Chat not found: ${chatId}`);
+      throw new Error(`Chat not found: ${chatId}`);
     }
 
-    const chatData = parseChatFromDB(chat.data.chat);
+    // 2. Parse existing history
+    let existingHistory = parseChatFromDB(existingChatData.chat);
+    let messages = existingHistory.messages;
 
-    const updatedMessages = [...chatData.messages, message];
+    // 3. Handle retry logic: Remove last assistant message if necessary
+    if (isRetry && messages.length > 0) {
+      const lastMessage = messages.at(-1);
+      if (lastMessage?.role === "assistant") {
+        console.log(
+          `[addChatMessage] Retrying: Removing last assistant message (ID: ${lastMessage.id}) for chat ${chatId}`
+        );
+        messages = messages.slice(0, -1); // Remove the last message
+      } else {
+        console.warn(
+          `[addChatMessage] Retry requested for chat ${chatId}, but last message was not from assistant.`
+        );
+      }
+    }
 
-    await updateChatHistory({
-      id: chatId,
-      history: {
-        currentId: chatData.currentId,
-        messages: updatedMessages,
-      },
-    });
+    // 4. Append the new message
+    const newMessages = [...messages, message];
 
+    console.log(
+      `[addChatMessage] Updating chat ${chatId} with ${newMessages.length} messages. New message ID: ${message.id}, role: ${message.role}`
+    );
+
+    // 5. Update the chat record in the database
+    const updatedHistory = {
+      currentId: existingHistory.currentId,
+      messages: newMessages,
+    };
+
+    const dbUpdateResult = db
+      .update(chat)
+      .set({
+        chat: parseChatToDB(updatedHistory),
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(chat.id, chatId))
+      .run();
+
+    if (!dbUpdateResult?.changes) {
+      console.error(
+        `[addChatMessage] Failed to update chat ${chatId}. No changes detected.`
+      );
+      // Consider if throwing an error is appropriate if an update was expected
+      // throw new Error(`Failed to update chat history for chat ${chatId}`);
+    }
+
+    console.log(`[addChatMessage] Successfully updated chat ${chatId}`);
     return { success: true };
   } catch (error) {
-    console.error("Failed to add chat message:", error);
+    console.error(
+      `[addChatMessage] Failed to add message to chat ${chatId}:`,
+      error
+    );
+    // Re-throw the error to be handled by the caller (e.g., the API route)
     throw error;
   }
 }
@@ -1088,3 +1135,126 @@ export const getUploadedFiles = async (
     return [];
   }
 };
+
+/**
+ * Creates a new version of an existing document.
+ * Fetches metadata (chatId, extension) from the latest existing version
+ * and inserts a new row with the same ID but new content and timestamp.
+ */
+export async function createNewDocumentVersion({
+  id,
+  title,
+  kind,
+  content,
+}: {
+  id: string;
+  title: string;
+  kind: ArtifactKind;
+  content: string;
+}) {
+  try {
+    validateUUID(id);
+    const db = await getDb();
+
+    // Fetch the latest existing version to get metadata
+    const latestExistingDoc = db
+      .select({
+        chatId: document.chatId,
+        extension: document.extension,
+        // Select title/kind as well in case they were changed in the *very* latest update
+        // Although the caller should ideally pass the intended title/kind for the new version
+        title: document.title,
+        kind: document.kind,
+      })
+      .from(document)
+      .where(eq(document.id, id))
+      .orderBy(sql`${document.createdAt} DESC`)
+      .limit(1)
+      .get();
+
+    if (!latestExistingDoc) {
+      throw new Error(
+        `Cannot create new version: No existing document found with id ${id}`
+      );
+    }
+    if (!latestExistingDoc.chatId) {
+      throw new Error(
+        `Corrupted data: Latest existing document ${id} has null chatId.`
+      );
+    }
+
+    console.log(`[ACTION] Inserting new version for document ${id}`);
+    // Insert the new version
+    const result = db
+      .insert(document)
+      .values({
+        id, // Same ID
+        title, // Use title passed to this function
+        kind, // Use kind passed to this function
+        content,
+        chatId: latestExistingDoc.chatId, // Carry over chatId
+        extension: latestExistingDoc.extension ?? undefined, // Carry over extension
+        createdAt: new Date().toISOString(), // New timestamp
+      })
+      .run();
+
+    if (!result?.changes) {
+      throw new Error(`Failed to insert new version for document ${id}`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error(`Failed to create new document version for id ${id}:`, error);
+    throw error;
+  }
+}
+
+export async function documentToTempFile({
+  id,
+  chatId,
+}: {
+  id: string;
+  chatId: string;
+}) {
+  try {
+    validateUUID(id);
+
+    const documents = await getDocumentsById({ id });
+
+    const document = documents[0];
+
+    if (!document || !document.content) {
+      throw new Error(`Valid document not found for id ${id}`);
+    }
+
+    const tempFilePath = getValidatedPath(
+      chatId,
+      `${document.id}.${document.extension}`
+    );
+
+    if (!tempFilePath) {
+      throw new Error(`Failed to get validated path for document ${id}`);
+    }
+
+    writeFile(
+      tempFilePath,
+      document.content,
+      {
+        encoding: "utf-8",
+      },
+      (err) => {
+        if (err) {
+          throw new Error(`Failed to write file ${tempFilePath}: ${err}`);
+        }
+      }
+    );
+
+    return {
+      success: true,
+      tempFilePath,
+    };
+  } catch (error) {
+    console.error(`Failed to create temp file for document ${id}:`, error);
+    throw error;
+  }
+}

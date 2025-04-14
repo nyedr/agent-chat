@@ -1,19 +1,33 @@
 {
-  "version": "7",
+  "version": "6",
   "dialect": "sqlite",
   "entries": [
     {
       "idx": 0,
       "version": "6",
-      "when": 1737860096010,
-      "tag": "0000_tense_puff_adder",
+      "when": 1744520100000,
+      "tag": "0000_create_folder",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1738029518749,
-      "tag": "0001_stormy_ikaris",
+      "when": 1744520100001,
+      "tag": "0001_create_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1744520100002,
+      "tag": "0002_create_document",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1744578655603,
+      "tag": "0004_outstanding_bishop",
       "breakpoints": true
     }
   ]

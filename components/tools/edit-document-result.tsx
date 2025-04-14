@@ -14,11 +14,11 @@ SyntaxHighlighter.registerLanguage("markup", markup);
 SyntaxHighlighter.registerLanguage("css", css);
 SyntaxHighlighter.registerLanguage("javascript", javascript);
 
-interface EditFileResultProps {
-  result: ToolReturnTypes["editFile"];
+interface EditDocumentResultProps {
+  result: ToolReturnTypes["editDocument"];
 }
 
-export const EditFileResultComponent: React.FC<EditFileResultProps> = ({
+export const EditDocumentResultComponent: React.FC<EditDocumentResultProps> = ({
   result,
 }) => {
   const highlightSyntax = (str: string | undefined) => {
@@ -33,6 +33,8 @@ export const EditFileResultComponent: React.FC<EditFileResultProps> = ({
           padding: "0",
           margin: "0",
           background: "transparent",
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
         }}
         codeTagProps={{ style: { display: "inline" } }}
       >
@@ -68,6 +70,10 @@ export const EditFileResultComponent: React.FC<EditFileResultProps> = ({
             styles={{
               content: {
                 fontSize: "14px",
+                overflowX: "auto",
+              },
+              line: {
+                overflowX: "auto",
               },
             }}
           />

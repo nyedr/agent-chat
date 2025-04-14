@@ -1,0 +1,1 @@
+ALTER TABLE `document` ADD `diffs` text NOT NULL;

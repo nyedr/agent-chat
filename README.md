@@ -60,29 +60,31 @@ You will need to use the environment variables [defined in `.env.example`](.env.
 3. Download your environment variables: `vercel env pull`
 
 # 1. First install all dependencies
+
 ```bash
 pnpm install
 ```
 
 # 2. Then run database migrations
+
 ```bash
 pnpm db:migrate
 ```
 
 # 3. Run the app
+
 ```bash
 pnpm dev
 ```
 
 Your app template should now be running on [localhost:3000](http://localhost:3000/).
 
-
 # Models dependencies
 
 If you want to use a model other than the default, you will need to install the dependencies for that model.
 
-
 TogetherAI's Deepseek:
+
 ```bash
 pnpm add @ai-sdk/togetherai
 ```
@@ -95,9 +97,9 @@ The application uses a separate model for reasoning tasks (like research analysi
 
 ### Available Options
 
-| Provider | Models | Notes |
-|----------|--------|-------|
-| OpenAI | `gpt-4o`, `o1`, `o3-mini` | Native JSON schema support |
+| Provider   | Models                    | Notes                                  |
+| ---------- | ------------------------- | -------------------------------------- |
+| OpenAI     | `gpt-4o`, `o1`, `o3-mini` | Native JSON schema support             |
 | TogetherAI | `deepseek-ai/DeepSeek-R1` | Requires `BYPASS_JSON_VALIDATION=true` |
 
 ### Important Notes
@@ -110,7 +112,6 @@ The application uses a separate model for reasoning tasks (like research analysi
   - Note: Without JSON validation, the model responses may be less structured
 - The reasoning model is used for tasks that require structured thinking and analysis, such as:
   - Research analysis
-  - Document suggestions
   - Data extraction
   - Structured responses
 - If no `REASONING_MODEL` is specified, it defaults to `o1-mini`
@@ -119,6 +120,7 @@ The application uses a separate model for reasoning tasks (like research analysi
 ### Usage
 
 Add to your `.env` file:
+
 ```bash
 # Choose one of: deepseek-reasoner, deepseek-ai/DeepSeek-R1
 REASONING_MODEL=deepseek-ai/DeepSeek-R1

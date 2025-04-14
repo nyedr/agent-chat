@@ -1,18 +1,26 @@
-import { Suggestion } from "@/lib/db/schema";
 import { UseChatHelpers } from "ai/react";
 import { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import { DataStreamDelta } from "./data-stream-handler";
 import { UIArtifact } from "./artifact";
+import { Document } from "@/lib/db/schema";
+import { ChatRequestOptions, CreateMessage, Message } from "ai";
 
-export type ArtifactActionContext<M = any> = {
+export interface ArtifactActionContext<Metadata> {
   content: string;
-  handleVersionChange: (type: "next" | "prev" | "toggle" | "latest") => void;
+  handleVersionChange: (type: "next" | "prev" | "latest" | number) => void;
   currentVersionIndex: number;
   isCurrentVersion: boolean;
   mode: "edit" | "diff";
-  metadata: M;
-  setMetadata: Dispatch<SetStateAction<M>>;
-};
+  appendMessage: (
+    message: Message | CreateMessage,
+    chatRequestOptions?: ChatRequestOptions
+  ) => Promise<string | null | undefined>;
+  setMessages: React.Dispatch<React.SetStateAction<any[]>>;
+  setArtifact: React.Dispatch<React.SetStateAction<UIArtifact>>;
+  metadata: Metadata;
+  setMetadata: React.Dispatch<React.SetStateAction<Metadata>>;
+  documents?: Document[];
+}
 
 type ArtifactAction<M = any> = {
   icon: ReactNode;
@@ -39,18 +47,24 @@ export interface ArtifactContent<M = any> {
   isCurrentVersion: boolean;
   currentVersionIndex: number;
   status: "streaming" | "idle";
-  suggestions: Array<Suggestion>;
   onSaveContent: (updatedContent: string, debounce: boolean) => void;
   isInline: boolean;
   getDocumentContentById: (index: number) => string;
   isLoading: boolean;
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
+  setArtifact: Dispatch<SetStateAction<UIArtifact>>;
 }
 
-interface InitializeParameters<M = any> {
+// Type for parameters passed to the initialize function
+export interface InitializeParameters<Metadata = any> {
+  setMetadata: React.Dispatch<React.SetStateAction<Metadata>>;
   documentId: string;
-  setMetadata: Dispatch<SetStateAction<M>>;
+  metadata?: Metadata; // Add optional metadata
+}
+
+export interface OnStreamPartParameters<Delta, Metadata> {
+  // ... rest of the interface ...
 }
 
 type ArtifactConfig<T extends string, M = any> = {

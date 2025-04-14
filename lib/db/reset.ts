@@ -34,7 +34,6 @@ async function resetDatabase() {
     const dropQueries = [
       "DROP TABLE IF EXISTS `chat`;",
       "DROP TABLE IF EXISTS `document`;",
-      "DROP TABLE IF EXISTS `suggestion`;",
       // Drop migrations table to start fresh
       "DROP TABLE IF EXISTS `__drizzle_migrations`;",
       "DROP TABLE IF EXISTS `folder`;",

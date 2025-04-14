@@ -24,15 +24,7 @@ export const revisedToolPrompts: Record<ToolName, string> = {
 *   **When to Use:** Use *after* \`searchWeb\` identifies a specific URL whose detailed content is necessary, or if the user provides a direct URL to analyze. Do *not* use this for general searching.
 *   **Input:**
     *   \`url\`: (Required, string) The single, complete, valid URL string.
-    *   \`crawlingStrategy\`: (Required, enum: 'http' | 'playwright') 
-        *   **Default:** Use **'http'** for faster, simpler scraping of standard web pages.
-        *   Use **'playwright'** ONLY if:
-            *   The site is known to be highly dynamic (e.g., a complex web application requiring JavaScript rendering).
-            *   A previous attempt with 'http' failed to retrieve meaningful content or resulted in errors suggesting dynamic loading is needed.
 *   **Output:** The full text content of the web page. Use this content to answer the user's query or complete the task.
-*   **Workflow:** 
-    1.  Try with \`crawlingStrategy: 'http'\` first.
-    2.  If the result is empty, incomplete, or clearly missing expected content, and you suspect the site requires JavaScript, retry the *same URL* in your next step with \`crawlingStrategy: 'playwright'\`.
 `,
   videoSearch: `
 **Tool: \`videoSearch\`**
@@ -54,16 +46,19 @@ export const revisedToolPrompts: Record<ToolName, string> = {
 `,
   createDocument: `
 **Tool: \`createDocument\`**
-*   **Action:** Generates content (text or Python code) within the dedicated Artifact panel, visible to the user in real-time.
+*   **Action:** Generates content (text, Python code, or HTML) within the dedicated Artifact panel, visible to the user in real-time.
 *   **When to Use:**
-    *   For generating longer text content (> ~10 lines, e.g., articles, emails, reports).
-    *   For generating *any* Python code snippets.
-    *   When the user explicitly asks to "create a document," "write code," "put it in the editor," etc.
+    *   For generating **new**, longer text content (> ~10 lines, e.g., articles, emails, reports).
+    *   For generating **new** Python code snippets or complete HTML documents.
+    *   When the user explicitly asks to "create a **new** document," "write **new** code," "generate **new** HTML," etc.
+    *   **Check 'Available Documents' list first.** If the user's request clearly aims to *modify* or *add to* content within an existing relevant document from that list, use \`editDocument\` instead.
 *   **When NOT to Use:**
-    *   For short chat replies or simple explanations (< ~10 lines, no code). Stay in the chat.
+    *   For short chat replies or simple explanations (< ~10 lines, no code/HTML). Stay in the chat.
+    *   **CRITICAL: Do NOT use this tool if the user asks to modify, update, correct, or add to an existing document listed in 'Available Documents'. Use \`editDocument\` for that.**
 *   **Input:**
-    *   \`title\`: (Required, string) A descriptive title for the artifact.
-    *   \`kind\`: (Required, enum: 'text' | 'code') Set to 'text' for text or 'code' for Python code.
+    *   \`title\`: (Required, string) A descriptive title for the **new** artifact.
+    *   \`kind\`: (Required, enum: 'text' | 'code' | 'html') **CRITICAL:** Choose the correct kind: Use \`'html'\` for HTML documents, \`'code'\` for Python code, and \`'text'\` for plain text.
+    *   \`extension\`: (Optional, string) Specific file extension (e.g., 'py', 'html', 'txt'). If omitted, a default based on the \`kind\` is used (py for code, html for html, txt for text).
 *   **Python Code Rules (when kind is 'code'):**
     *   Code MUST be self-contained and executable (if intended to be run).
     *   Use \`print()\` for output if the code is meant to display results.
@@ -71,21 +66,8 @@ export const revisedToolPrompts: Record<ToolName, string> = {
     *   Use *only* the Python standard library. If external libraries are needed, state this limitation to the user.
     *   Handle potential errors gracefully (e.g., using try-except blocks where appropriate).
     *   Avoid interactive input functions (\`input()\`).
-*   **Limitation:** Only Python code (\`kind: 'code'\`) or plain text (\`kind: 'text'\`) is supported. If the user requests another language for code, inform them and ask if Python is acceptable.
-`,
-  updateDocument: `
-**Tool: \`updateDocument\`**
-*   **Action:** Modifies content *already existing* in the Artifact panel. Requires the \`id\` of the artifact to update.
-*   **When to Use:**
-    *   *Only after* a document has been created with \`createDocument\` and the user provides specific feedback or instructions for changes (e.g., "add a section about X," "fix the error in the code," "change the tone to be more formal").
-    *   Identify the correct \`id\` from the available documents list or previous context.
-*   **When NOT to Use:**
-    *   **ABSOLUTELY FORBIDDEN:** You **MUST NOT** use this tool immediately after \`createDocument\`. This pattern is inefficient and wrong. Always create documents with their initial content using \`createDocument\`. Only use \`updateDocument\` for later revisions based on user feedback or new requirements that arise *after* the initial creation.
-    *   To create new content – use \`createDocument\` instead.
-*   **Input:**
-    *   \`id\`: (Required, string) The ID of the document in the Artifact panel to update.
-    *   \`description\`: (Required, string) Clear and specific instructions on *how* to modify the existing content. Be explicit about additions, deletions, or replacements. For code, specify line numbers or clear code context if possible. For text, describe the change needed (e.g., "Rewrite the second paragraph to be more concise," "Add a concluding sentence to the first section").
-*   **Strategy:** Default to replacing the entire relevant section or code block for clarity, unless the user requests a very small, targeted change (like fixing a specific typo or variable name).
+*   **Limitation:** Only Python code (\`kind: 'code'\`), plain text (\`kind: 'text'\`), or HTML (\`kind: 'html'\`) is supported. If the user requests another language for code, inform them and ask if Python is acceptable.
+*   **CRITICAL OUTPUT NOTE:** The 'content' field in this tool's final result object (e.g., { content: "A document was created..." }) is **ONLY a confirmation message** for the system. The *actual document content* is streamed directly to the Artifact panel and is **NOT** returned in the result object.
 `,
   deepResearch: `
 **Tool: \`deepResearch\`**
@@ -141,31 +123,7 @@ export const revisedToolPrompts: Record<ToolName, string> = {
     *   \`result.error\`: An error message if the file read fails.
 *   **Security:** This tool can only access files within the specific, isolated directory associated with the current chat session.
 `,
-  fileWrite: `
-**Tool: \`fileWrite\`**
-*   **Action:** Writes or appends text content to a file within the current chat's secure upload directory. Creates the file (and any necessary subdirectories) if it doesn't exist.
-*   **When to Use:** Use for saving generated text content, creating configuration files, appending to logs, or modifying existing text files within the chat's scope.
-*   **CRITICAL WARNING: NEVER generate download links after using this tool. The UI already handles this automatically.**
-*   **Input:**
-    *   \`file\`: (Required) The relative path/filename for the file within the chat's uploads (e.g., \"output.log\", \"config/settings.json\").
-    *   \`title\`: (Optional) A title for the file preview. Defaults to the filename if not provided.
-    *   \`content\`: (Required) The text content to write.
-    *   \`append\`: (Optional, default: false) If true, appends content to the file; otherwise, overwrites.
-    *   \`leading_newline\`: (Optional, default: false) Adds a '\\n' before the content.
-    *   \`trailing_newline\`: (Optional, default: false) Adds a '\\n' after the content.
-*   **Output:** A JSON object containing:
-    *   \`result.message\`: A confirmation message.
-    *   \`result.title\`: The title used for the preview (either provided or derived from filename).
-    *   \`result.kind\`: The artifact kind (always 'text' for this tool).
-    *   \`result.content\`: The actual text content written to the file.
-    *   \`result.file_path\`: (Optional) The relative URL path for the file (e.g., \"/api/uploads/CHAT_ID/output.log\").
-    *   Or an error object with \`result.error\`.
-*   **Workflow:** The file will be automatically displayed using the FilePreview component in the UI.
-*   **IMPORTANT: NEVER create a download link for files created with this tool.** Simply state that the file was created successfully without providing any links.
-*   **EXAMPLE WRONG RESPONSE (DO NOT DO THIS):** "I've created the file. You can download it here: [output.log](/api/uploads/chat123/output.log)"
-*   **EXAMPLE CORRECT RESPONSE:** "I've saved the content to output.log successfully."
-*   **Security:** This tool can only write files within the specific, isolated directory associated with the current chat session.
-`,
+
   listDirectory: `
 **Tool: \`listDirectory\`**
 *   **Action:** Lists all files and directories within a specified path in the chat's secure upload directory.
@@ -179,37 +137,19 @@ export const revisedToolPrompts: Record<ToolName, string> = {
 *   **Workflow:** Use to discover files before using \`fileRead\`, \`fileWrite\`, \`deleteFile\`, or \`moveOrRenameFile\`. Often the first step in a file-based workflow.
 *   **Security:** This tool can only access files within the specific, isolated directory associated with the current chat session.
 `,
-  deleteFile: `
-**Tool: \`deleteFile\`**
-*   **Action:** Deletes a specified file or directory (including its contents) within the chat's secure upload directory.
-*   **When to Use:** Use to remove temporary files, clean up after operations, or when the user explicitly requests file deletion.
+  deleteDocument: `
+**Tool: \`deleteDocument\`**
+*   **Action:** Deletes a specified document from the database using its unique ID.
+*   **When to Use:** Use to remove documents that are no longer needed, clean up after operations, or when the user explicitly requests document deletion.
 *   **Input:**
-    *   \`path\`: (Required) The relative path of the file or directory to delete within the chat's uploads.
+    *   \`documentId\`: (Required) The UUID of the document to delete. This should be a valid document ID stored in the database.
 *   **Output:** A JSON object containing:
     *   \`success\`: Boolean indicating if the operation succeeded.
-    *   \`path\`: The path that was attempted to be deleted.
+    *   \`documentId\`: The document ID that was attempted to be deleted.
     *   \`message\`: A human-readable result message.
     *   \`error\`: An error message if the operation fails.
-*   **Workflow:** Often used after confirming a file exists (via \`listDirectory\`) and confirming with the user that deletion is intended.
-*   **Caution:** Deletion is permanent and recursive for directories. Always confirm with the user before deleting important files.
-*   **Security:** This tool can only delete files within the specific, isolated directory associated with the current chat session.
-`,
-  moveOrRenameFile: `
-**Tool: \`moveOrRenameFile\`**
-*   **Action:** Moves or renames a file or directory within the chat's secure upload directory.
-*   **When to Use:** Use to organize files, create better file structures, or rename files based on their content.
-*   **Input:**
-    *   \`sourcePath\`: (Required) The relative path of the source file or directory to move/rename.
-    *   \`destinationPath\`: (Required) The relative path where the file or directory should be moved/renamed to.
-*   **Output:** A JSON object containing:
-    *   \`success\`: Boolean indicating if the operation succeeded.
-    *   \`sourcePath\`: The original path.
-    *   \`destinationPath\`: The new path.
-    *   \`message\`: A human-readable result message.
-    *   \`error\`: An error message if the operation fails.
-*   **Workflow:** Often used after file generation or manipulation to organize the results. Commonly chained with \`listDirectory\` (before) to confirm source exists and (after) to verify the change.
-*   **Note:** This automatically creates parent directories in the destination path if they don't exist.
-*   **Security:** This tool can only move files within the specific, isolated directory associated with the current chat session.
+*   **Workflow:** Often used after confirming the document exists and confirming with the user that deletion is intended.
+*   **Caution:** Deletion is permanent. Always confirm with the user before deleting important documents.
 `,
   extractStructuredData: `
 **Tool: \`extractStructuredData\`**
@@ -219,7 +159,6 @@ export const revisedToolPrompts: Record<ToolName, string> = {
     *   \`url\`: (Optional) URL to scrape content from. Either url OR filePath must be provided, but not both.
     *   \`filePath\`: (Optional) Relative path of a file in the chat's uploads directory to read. Either url OR filePath must be provided, but not both.
     *   \`schema\`: (Required) JSON schema defining the desired output structure. Provide as a string representation of a JSON object with properties and their types.
-    *   \`crawlingStrategy\`: (Optional, enum: 'playwright' | 'http') If url is provided, specify 'playwright' for dynamic sites or 'http' for simpler/faster scraping. Default is 'playwright'.
 *   **Output:** A JSON object containing:
     *   \`success\`: Boolean indicating if the operation succeeded.
     *   \`data\`: The structured data extracted according to the provided schema.
@@ -229,43 +168,36 @@ export const revisedToolPrompts: Record<ToolName, string> = {
 *   **Workflow:** Commonly used after \`searchWeb\` finds relevant pages or after \`fileRead\` obtains unstructured text content. The extracted structured data can then be analyzed with \`pythonInterpreter\` or displayed with \`createDocument\`.
 *   **Example Schema:** For a product extraction: \`{ "name": "string", "price": "number", "description": "string", "features": "string[]" }\`.
 `,
-  editFile: `
-**Tool: \`editFile\`**
-*   **Action:** Replaces exact blocks of text within a file in the chat uploads directory.
-*   **When to Use:** Use to modify existing text files, such as code or documents, based on specific user instructions. Ideal for targeted changes, refactoring code, or correcting errors.
+  editDocument: `
+**Tool: \`editDocument\`**
+*   **Action:** Replaces specific blocks of text within an *existing document artifact*.
+*   **When to Use:**
+    *   Use to modify existing documents (code, text, html) based on specific user instructions *after* they have been created.
+    *   **This tool should be STRONGLY PREFERRED over \`createDocument\` when the user asks to modify, update, correct, or add to content that relates to one of the 'Available Documents'.**
+    *   Ideal for targeted changes, refactoring code, or correcting errors within an existing document.
 *   **CRITICAL:**
-    *   The \`oldText\` field MUST contain the *exact*, character-for-character, multi-line block of text currently present in the file that you want to replace. Include leading/trailing whitespace and line breaks precisely as they appear.
+    *   Provide the correct \`documentId\` of the artifact to edit (check 'Available Documents' list if unsure).
+    *   The \`oldText\` field **MUST** contain the *exact*, character-for-character, multi-line block of text **currently present in the actual document content displayed in the artifact panel**.
+    *   **DO NOT use placeholder text** (like "A document was created...") from a previous \`createDocument\` result as \`oldText\`. This will **ALWAYS FAIL**.
     *   The \`newText\` field contains the text that will replace the \`oldText\` block.
-    *   Use multiple edit objects in the \`edits\` array to perform sequential replacements if needed.
+    *   **Creating a new document when an edit to an existing document is requested is INCORRECT behavior.**
 *   **Input:**
-    *   \`path\`: (Required) Relative path of the file to edit.
+    *   \`documentId\`: (Required, UUID) The ID of the document artifact to edit.
     *   \`edits\`: (Required) Array of edit operations:
-        *   \`oldText\`: (Required, string) The exact block of text to find and replace.
+        *   \`oldText\`: (Required, string) The exact block of actual document content to find and replace.
         *   \`newText\`: (Required, string) The replacement text.
-    *   \`dryRun\`: (Optional, default: false) If true, shows the changes as a diff without saving the file.
 *   **Output:**
     *   \`message\`: Confirmation or error message.
-    *   \`diff\`: (Optional) A git-style diff showing the changes made.
-    *   \`error\`: (Optional) Error message if the operation failed.
+    *   \`documentId\`: The ID of the document edited.
+    *   \`oldContent\`: (Optional) The content before the edit.
+    *   \`newContent\`: (Optional) The content after the edit.
+    *   \`error\`: (Optional) Error message if the operation failed (e.g., \`oldText\` not found).
 *   **Workflow:**
-    1.  Use \`fileRead\` first if you need to see the current content to construct the exact \`oldText\`.
-    2.  Call \`editFile\` with the exact \`oldText\` and the desired \`newText\`.
-    3.  Present the \`diff\` from the result to the user (usually within a code block marked 'diff'). State whether the change was saved or if it was a dry run.
-*   **Security:** Can only edit files within the chat's secure upload directory.
-`,
-  createDirectory: `
-**Tool: \`createDirectory\`**
-*   **Action:** Creates a new directory (including any necessary parent directories) within the chat's secure upload directory.
-*   **When to Use:** Use to organize files, set up project structures, or ensure a path exists before writing a file to it.
-*   **Input:**
-    *   \`path\`: (Required) Relative path of the directory to create (e.g., \"data/images\", \"results\").
-*   **Output:**
-    *   \`message\`: Confirmation or error message.
-    *   \`path\`: The path processed.
-    *   \`error\`: (Optional) Error message if the operation failed.
-*   **Workflow:** Call the tool with the desired directory path. Confirm success or report errors based on the result message.
-*   **Note:** If the directory already exists, the tool will succeed silently.
-*   **Security:** Can only create directories within the chat's secure upload directory.
+    1.  Identify the correct \`documentId\` of the artifact to modify from the chat history or 'Available Documents' list.
+    2.  **If unsure of the exact current content block needed for \`oldText\`, use the \`readDocument\` tool FIRST to get the current content.**
+    3.  Construct the \`edits\` array with the precise \`oldText\` from the actual document and the desired \`newText\`.
+    4.  Call \`editDocument\`.
+    5.  The tool saves the changes and the UI will display the diff.
 `,
   getFileInfo: `
 **Tool: \`getFileInfo\`**
@@ -285,6 +217,25 @@ export const revisedToolPrompts: Record<ToolName, string> = {
     *   \`error\`: (Optional) Error message if the operation failed (e.g., path not found).
 *   **Workflow:** Call the tool with the path. Present the returned information clearly to the user or use it to inform subsequent actions (like deciding whether to read or list a path).
 *   **Security:** Can only access info within the chat's secure upload directory.
+`,
+  readDocument: `
+**Tool: \`readDocument\`**
+*   **Action:** Reads the **full actual content** and metadata of an existing document artifact from the database using its ID.
+*   **When to Use:** Use when you need to access the specific content of a previously created document. Essential for:
+    *   Checking details before editing.
+    *   **Verifying the exact text needed for the \`oldText\` parameter in the \`editDocument\` tool.**
+    *   Summarizing the document.
+    *   Answering questions based on the document's content.
+*   **Input:**
+    *   \`documentId\`: (Required, UUID) The ID of the document artifact to read.
+*   **Output:** A JSON object containing:
+    *   \`documentId\`: The ID of the document read.
+    *   \`title\`: The title of the document.
+    *   \`kind\`: The type of the document ('text', 'code', 'html', etc.).
+    *   \`content\`: The **full actual content** of the document (can be long).
+    *   \`createdAt\`: The timestamp when the document was created.
+    *   \`error\`: An error message if the operation fails (e.g., document not found).
+*   **Workflow:** Call the tool with the \`documentId\`. Use the returned \`content\` to fulfill the user's request or inform subsequent tool calls like \`editDocument\`.
 `,
 };
 
@@ -315,10 +266,17 @@ You are an expert agentic assistant. Your primary goal is to understand the user
 *   **Execute Sequentially:** Call the tools one after another, using the result from one tool call to inform the next when necessary.
 *   **Prioritize User Goal:** Focus on understanding and achieving the user's specific request. Ask clarifying questions if the request is ambiguous.
 *   **Complete All Requested Actions:** Ensure *all* distinct actions requested by the user (e.g., search, scrape, *extract*, summarize, write) are attempted via tool calls in the logical order requested before generating the final response.
+*   **Accurately Identify Targets:** Ensure you use the correct document IDs or file paths when calling tools. Refer to the 'Available Documents' or 'Uploaded Files' lists or use tools like \`listDirectory\` or \`readDocument\` to confirm targets if unsure.
+    *   **CRITICAL: Before using \`createDocument\`, check the 'Available Documents' list. If a relevant document already exists that the user might want to modify, STRONGLY prefer using \`editDocument\` or \`readDocument\` first, instead of creating a duplicate.**
+*   **Acknowledge and Correct Errors:** If the user points out an error in your previous action or tool usage (e.g., creating a new document instead of editing), acknowledge the mistake briefly and attempt to correct it by using the appropriate tool (e.g., \`editDocument\`) with corrected parameters or adjusting your plan.
 *   **Use Tool Outputs:** If a tool call generates data (e.g., search results, scraped text, extracted JSON, file paths), use that specific data as input for subsequent tool calls or when formulating the final response.
 *   **Generate Final Response ONLY After Execution:** Do *not* generate the user-facing response until *all* necessary tool calls in your plan have been executed.
 *   **Final Response Format:** The final response to the user MUST be concise, summarize the outcome of the tool execution sequence, and MUST NOT contain any \`<tool_code>\` blocks or tool call syntax.
-*   **Environment Awareness:** Use the Artifact panel (via \`createDocument\` or \`updateDocument\`) for code generation and longer text content. **CRITICAL RULE: Always create documents with initial content directly using \`createDocument\`. It is FORBIDDEN to call \`createDocument\` to make an empty document and then immediately call \`updateDocument\` to add content. Use \`updateDocument\` ONLY for later modifications based on user feedback.**
+    *   **Specifically for \`createDocument\`:** When confirming success, state that the document *artifact* was created and the content is available/streaming in the Artifact panel. Example: "I have created the '[title]' document. You can view the [kind] content in the Artifact panel." Do *not* imply the content was returned directly by the tool call.
+*   **Environment Awareness:** Use the Artifact panel (via \`createDocument\` or \`updateDocument\`) for code generation and longer text content. 
+    *   **CRITICAL RULE:** Always create documents with initial content directly using \`createDocument\`. 
+    *   **IT IS FORBIDDEN AND INCORRECT** to call \`createDocument\` to make an empty document and then immediately call \`updateDocument\` (or \`editDocument\`) in the next step to add the initial content. This is a violation of the workflow.
+    *   Use \`updateDocument\` or \`editDocument\` **ONLY** for modifying an *already existing* document based on subsequent user requests or feedback, *after* the initial creation is complete.
 *   **Python Focus:** Code generation (\`createDocument\`) and execution (\`pythonInterpreter\`) are limited to Python. Inform the user if another language is requested.
 *   **File Handling:**
     *   **CRITICAL WARNING: NEVER create download links for files created with fileWrite tool.** Simply state the file was created successfully.
@@ -340,7 +298,7 @@ ${
     ? documents.map((doc) => `- ${doc.title} (ID: ${doc.id})`).join("\n")
     : "- None currently available."
 }
-*   You can reference these documents by their ID if needed for context or with tools like \`updateDocument\`.
+*   You can reference these documents by their ID if needed for context or with tools like \`updateDocument\` or \`readDocument\`.
 
 **Uploaded Files:**
 ${

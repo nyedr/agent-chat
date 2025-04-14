@@ -16,17 +16,13 @@ CREATE TABLE `document` (
 	`content` text,
 	`kind` text DEFAULT 'text' NOT NULL,
 	`chatId` text NOT NULL,
+	`diffs` text,
 	FOREIGN KEY (`chatId`) REFERENCES `chat`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE TABLE `suggestion` (
+CREATE TABLE `folder` (
 	`id` text PRIMARY KEY NOT NULL,
-	`documentId` text NOT NULL,
-	`documentCreatedAt` text NOT NULL,
-	`originalText` text NOT NULL,
-	`suggestedText` text NOT NULL,
-	`description` text,
-	`isResolved` integer DEFAULT false NOT NULL,
-	`createdAt` text NOT NULL,
-	FOREIGN KEY (`documentId`) REFERENCES `document`(`id`) ON UPDATE no action ON DELETE no action
+	`name` text NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
 );

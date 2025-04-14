@@ -11,12 +11,13 @@ export const initialArtifactData: UIArtifact = {
   title: "",
   status: "idle",
   isVisible: false,
-  boundingBox: {
-    top: 0,
-    left: 0,
-    width: 0,
-    height: 0,
-  },
+  // Bounding box seems deprecated based on artifact.tsx
+  // boundingBox: {
+  //   top: 0,
+  //   left: 0,
+  //   width: 0,
+  //   height: 0,
+  // },
 };
 
 type Selector<T> = (state: UIArtifact) => T;
@@ -63,6 +64,16 @@ export function useArtifact() {
     [setLocalArtifact]
   );
 
+  const hideArtifact = useCallback(() => {
+    setLocalArtifact(
+      (currentArtifact) => ({
+        ...(currentArtifact || initialArtifactData),
+        isVisible: false,
+      }),
+      false // Don't revalidate SWR cache when just hiding
+    );
+  }, [setLocalArtifact]);
+
   const { data: localArtifactMetadata, mutate: setLocalArtifactMetadata } =
     useSWR<any>(
       () =>
@@ -81,7 +92,14 @@ export function useArtifact() {
       setArtifact,
       metadata: localArtifactMetadata,
       setMetadata: setLocalArtifactMetadata,
+      hideArtifact,
     }),
-    [artifact, setArtifact, localArtifactMetadata, setLocalArtifactMetadata]
+    [
+      artifact,
+      setArtifact,
+      localArtifactMetadata,
+      setLocalArtifactMetadata,
+      hideArtifact,
+    ]
   );
 }

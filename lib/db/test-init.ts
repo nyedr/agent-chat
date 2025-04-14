@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { chat, document, suggestion } from "./schema";
+import { chat, document } from "./schema";
 import path from "path";
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -9,13 +9,11 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 type Schema = {
   chat: typeof chat;
   document: typeof document;
-  suggestion: typeof suggestion;
 };
 
 const schema: Schema = {
   chat,
   document,
-  suggestion,
 };
 
 export const initializeTestDatabase = async () => {
@@ -37,7 +35,7 @@ export const initializeTestDatabase = async () => {
     });
 
     // Verify tables were created
-    const requiredTables = ["chat", "document", "suggestion"];
+    const requiredTables = ["chat", "document"];
     const existingTables = db
       .select({ name: sql<string>`name` })
       .from(sql`sqlite_master`)

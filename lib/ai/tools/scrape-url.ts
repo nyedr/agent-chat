@@ -9,16 +9,8 @@ export const scrapeUrl = ({ dataStream }: { dataStream: DataStreamWriter }) =>
     description: "Scrape a URL for information",
     parameters: z.object({
       url: z.string().describe("The URL to scrape content from"),
-      crawlingStrategy: z
-        .enum(["playwright", "http"])
-        .describe(
-          "Playwright is slower but for more dynamic javascript heavy sites, http is fast and simple usually better for UX."
-        ),
     }),
-    execute: async ({
-      url,
-      crawlingStrategy = "http",
-    }): Promise<SearchToolResponse> => {
+    execute: async ({ url }): Promise<SearchToolResponse> => {
       dataStream.writeData({
         type: "scrape-url-start",
         content: { status: "started", url },
@@ -27,7 +19,7 @@ export const scrapeUrl = ({ dataStream }: { dataStream: DataStreamWriter }) =>
       try {
         const { results } = await scrapeAndProcessUrls({
           urls: [url],
-          crawlingStrategy: crawlingStrategy,
+          crawlingStrategy: "http",
         });
         const scrapedUrlResult = results[0];
 

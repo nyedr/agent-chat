@@ -5,7 +5,6 @@ import { useDeepResearch } from "@/lib/deep-research-context";
 import { useChat } from "@ai-sdk/react";
 import { initialArtifactData, useArtifact } from "@/hooks/use-artifact";
 import { artifactDefinitions, ArtifactKind } from "./artifact";
-import { Suggestion } from "@/lib/db/schema";
 
 // Expanded type to include all expected custom data payloads
 export type DataStreamDelta = {
@@ -18,7 +17,6 @@ export type DataStreamDelta = {
     | "html"
     | "title"
     | "id"
-    | "suggestion"
     | "clear"
     | "finish"
     | "kind"
@@ -37,7 +35,7 @@ export type DataStreamDelta = {
     | "python-stderr-delta"
     | "python-execution-end"
     | "python-error";
-  content: string | Suggestion | any;
+  content: string | any;
 };
 
 export function DataStreamHandler({ id }: { id: string }) {
@@ -149,7 +147,6 @@ export function DataStreamHandler({ id }: { id: string }) {
         "image-delta",
         "title",
         "id",
-        "suggestion",
         "clear",
         "finish",
         "kind",

@@ -5,15 +5,21 @@ import { Dispatch, memo, SetStateAction, useState } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArtifactActionContext } from "./create-artifact";
+import { Message, UseChatHelpers } from "@ai-sdk/react";
 
 interface ArtifactActionsProps {
   artifact: UIArtifact;
-  handleVersionChange: (type: "next" | "prev" | "toggle" | "latest") => void;
+  handleVersionChange: (type: number | "next" | "prev" | "latest") => void;
   currentVersionIndex: number;
   isCurrentVersion: boolean;
   mode: "edit" | "diff";
   metadata: any;
   setMetadata: Dispatch<SetStateAction<any>>;
+  appendMessage: UseChatHelpers["append"];
+  setMessages: (
+    messages: Message[] | ((messages: Message[]) => Message[])
+  ) => void;
+  setArtifact: Dispatch<SetStateAction<UIArtifact>>;
 }
 
 function PureArtifactActions({
@@ -24,6 +30,9 @@ function PureArtifactActions({
   mode,
   metadata,
   setMetadata,
+  appendMessage,
+  setMessages,
+  setArtifact,
 }: ArtifactActionsProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -35,7 +44,7 @@ function PureArtifactActions({
     throw new Error("Artifact definition not found!");
   }
 
-  const actionContext: ArtifactActionContext = {
+  const actionContext: ArtifactActionContext<any> = {
     content: artifact.content,
     handleVersionChange,
     currentVersionIndex,
@@ -43,6 +52,9 @@ function PureArtifactActions({
     mode,
     metadata,
     setMetadata,
+    appendMessage,
+    setMessages,
+    setArtifact,
   };
 
   return (

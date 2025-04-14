@@ -4,42 +4,17 @@ import { DocumentSkeleton } from "@/components/tools/document-skeleton";
 import {
   ClockRewind,
   CopyIcon,
-  MessageIcon,
   PenIcon,
   RedoIcon,
   UndoIcon,
 } from "@/components/icons";
-import { Suggestion } from "@/lib/db/schema";
 import { toast } from "sonner";
-import { getSuggestions } from "../actions";
 import { Editor } from "@/components/text-editor";
 
-interface TextArtifactMetadata {
-  suggestions: Array<Suggestion>;
-}
-
-export const textArtifact = new Artifact<"text", TextArtifactMetadata>({
+export const textArtifact = new Artifact<"text">({
   kind: "text",
   description: "Useful for text content, like drafting essays and emails.",
-  initialize: async ({ documentId, setMetadata }) => {
-    const suggestions = await getSuggestions({ documentId });
-
-    setMetadata({
-      suggestions,
-    });
-  },
-  onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
-    if (streamPart.type === "suggestion") {
-      setMetadata((metadata) => {
-        return {
-          suggestions: [
-            ...metadata.suggestions,
-            streamPart.content as Suggestion,
-          ],
-        };
-      });
-    }
-
+  onStreamPart: ({ streamPart, setArtifact }) => {
     if (streamPart.type === "text-delta") {
       setArtifact((draftArtifact) => {
         return {
@@ -57,15 +32,14 @@ export const textArtifact = new Artifact<"text", TextArtifactMetadata>({
     }
   },
   content: ({
-    mode,
-    status,
     content,
+    isLoading,
     isCurrentVersion,
     currentVersionIndex,
-    onSaveContent,
     getDocumentContentById,
-    isLoading,
-    metadata,
+    onSaveContent,
+    status,
+    mode,
   }) => {
     if (isLoading) {
       return <DocumentSkeleton artifactKind="text" />;
@@ -75,28 +49,19 @@ export const textArtifact = new Artifact<"text", TextArtifactMetadata>({
       const oldContent = getDocumentContentById(currentVersionIndex - 1);
       const newContent = getDocumentContentById(currentVersionIndex);
 
+      console.log({ oldContent, newContent });
+
       return <DiffView oldContent={oldContent} newContent={newContent} />;
     }
 
     return (
-      <>
-        <div className="flex flex-row py-8 md:p-20 px-4">
-          <Editor
-            content={content}
-            suggestions={metadata ? metadata.suggestions : []}
-            isCurrentVersion={isCurrentVersion}
-            currentVersionIndex={currentVersionIndex}
-            status={status}
-            onSaveContent={onSaveContent}
-          />
-
-          {metadata &&
-          metadata.suggestions &&
-          metadata.suggestions.length > 0 ? (
-            <div className="md:hidden h-dvh w-12 shrink-0" />
-          ) : null}
-        </div>
-      </>
+      <Editor
+        content={content}
+        onSaveContent={onSaveContent}
+        status={status}
+        currentVersionIndex={currentVersionIndex}
+        isCurrentVersion={isCurrentVersion}
+      />
     );
   },
   actions: [
@@ -104,7 +69,7 @@ export const textArtifact = new Artifact<"text", TextArtifactMetadata>({
       icon: <ClockRewind size={18} />,
       description: "View changes",
       onClick: ({ handleVersionChange }) => {
-        handleVersionChange("toggle");
+        handleVersionChange("latest");
       },
       isDisabled: ({ currentVersionIndex, setMetadata }) => {
         if (currentVersionIndex === 0) {
@@ -160,17 +125,6 @@ export const textArtifact = new Artifact<"text", TextArtifactMetadata>({
           role: "user",
           content:
             "Please add final polish and check for grammar, add section titles for better structure, and ensure everything reads smoothly.",
-        });
-      },
-    },
-    {
-      icon: <MessageIcon />,
-      description: "Request suggestions",
-      onClick: ({ appendMessage }) => {
-        appendMessage({
-          role: "user",
-          content:
-            "Please add suggestions you have that could improve the writing.",
         });
       },
     },

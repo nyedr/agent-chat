@@ -4,22 +4,16 @@ import {
 } from "@/lib/deep-research/adapter";
 import { CreateDocumentToolResult, createDocument } from "./create-document";
 import { FileReadResult, fileRead } from "./file-read";
-import { FileWriteResult, fileWrite } from "./file-write";
 import {
   PythonInterpreterResult,
   pythonInterpreter,
 } from "./python-interpreter";
 import { SearchWebResult, searchWeb } from "./search-web";
-import { UpdateDocumentToolResult, updateDocument } from "./update-document";
 import { SearchToolResponse } from "@/lib/search/types";
 import { VideoSearchResult } from "@/lib/search/chains/videoSearchAgent";
 import { ImageSearchResult } from "@/lib/search/chains/imageSearchAgent";
 import { ListDirectoryToolResult, listDirectory } from "./list-directory";
-import { DeleteFileToolResult, deleteFile } from "./delete-file";
-import {
-  MoveOrRenameFileToolResult,
-  moveOrRenameFile,
-} from "./move-or-rename-file";
+import { DeleteDocumentToolResult, deleteDocument } from "./delete-document";
 import {
   ExtractStructuredDataToolResult,
   extractStructuredData,
@@ -28,31 +22,25 @@ import { DataStreamWriter } from "ai";
 import { ModelsByCapability } from "@/lib/ai/models";
 import { createSearchTools } from "@/lib/search/tools";
 import { scrapeUrl } from "./scrape-url";
-import { editFile, type EditFileResult } from "./edit-file";
-import {
-  createDirectory,
-  type CreateDirectoryResult,
-} from "./create-directory";
+import { editDocument, type EditDocumentResult } from "./edit-document";
 import { getFileInfo, type GetFileInfoResult } from "./get-file-info";
+import { readDocument, type ReadDocumentResult } from "./read-document";
 
 interface ToolReturnTypes {
   createDocument: CreateDocumentToolResult;
   deepResearch: DeepResearchToolResult;
-  updateDocument: UpdateDocumentToolResult;
   searchWeb: SearchWebResult;
   pythonInterpreter: PythonInterpreterResult;
   fileRead: FileReadResult;
-  fileWrite: FileWriteResult;
   scrapeUrl: SearchToolResponse;
   imageSearch: ImageSearchResult[];
   videoSearch: VideoSearchResult[];
   listDirectory: ListDirectoryToolResult;
-  deleteFile: DeleteFileToolResult;
-  moveOrRenameFile: MoveOrRenameFileToolResult;
+  deleteDocument: DeleteDocumentToolResult;
   extractStructuredData: ExtractStructuredDataToolResult;
-  editFile: EditFileResult;
-  createDirectory: CreateDirectoryResult;
+  editDocument: EditDocumentResult;
   getFileInfo: GetFileInfoResult;
+  readDocument: ReadDocumentResult;
 }
 
 type ToolName = keyof ToolReturnTypes;
@@ -105,19 +93,11 @@ export function createModelTools(params: CreateModelToolsParams) {
       dataStream,
       chatId,
     }),
-    fileWrite: fileWrite({
-      dataStream,
-      chatId,
-    }),
     listDirectory: listDirectory({
       dataStream,
       chatId,
     }),
-    deleteFile: deleteFile({
-      dataStream,
-      chatId,
-    }),
-    moveOrRenameFile: moveOrRenameFile({
+    deleteDocument: deleteDocument({
       dataStream,
       chatId,
     }),
@@ -126,9 +106,6 @@ export function createModelTools(params: CreateModelToolsParams) {
     createDocument: createDocument({
       dataStream,
       chatId,
-    }),
-    updateDocument: updateDocument({
-      dataStream,
     }),
 
     // Web/Search operations
@@ -154,17 +131,15 @@ export function createModelTools(params: CreateModelToolsParams) {
       dataStream,
       chatId,
     }),
-    editFile: editFile({
+    editDocument: editDocument({
       dataStream,
-      chatId,
-    }),
-    createDirectory: createDirectory({
-      dataStream,
-      chatId,
     }),
     getFileInfo: getFileInfo({
       dataStream,
       chatId,
+    }),
+    readDocument: readDocument({
+      dataStream,
     }),
   };
 }

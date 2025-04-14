@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9b3a3da0-fb65-4a2d-b5f0-1b013e837004",
-  "prevId": "06c70dd7-f865-4281-af20-8fecd066818b",
+  "id": "d262acf0-d365-4675-8084-25942918a2a6",
+  "prevId": "5a468efc-0b9c-4fd9-9480-0e013c8f684c",
   "tables": {
     "chat": {
       "name": "chat",
@@ -67,8 +67,8 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "NEXT_PUBLIC_CHAT_folder_id_folder_id_fk": {
-          "name": "NEXT_PUBLIC_CHAT_folder_id_folder_id_fk",
+        "chat_folder_id_folder_id_fk": {
+          "name": "chat_folder_id_folder_id_fk",
           "tableFrom": "chat",
           "tableTo": "folder",
           "columnsFrom": ["folder_id"],
@@ -86,12 +86,12 @@
         "id": {
           "name": "id",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "createdAt": {
-          "name": "createdAt",
+        "chatId": {
+          "name": "chatId",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -116,13 +116,42 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "extension": {
+          "name": "extension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
           "autoincrement": false,
-          "default": "'text'"
+          "default": "'txt'"
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "foreignKeys": {
+        "document_chatId_chat_id_fk": {
+          "name": "document_chatId_chat_id_fk",
+          "tableFrom": "document",
+          "tableTo": "chat",
+          "columnsFrom": ["chatId"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "document_id_createdAt_pk": {
+          "columns": ["id", "createdAt"],
+          "name": "document_id_createdAt_pk"
+        }
+      },
       "uniqueConstraints": {}
     },
     "folder": {
@@ -159,82 +188,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
-    },
-    "suggestion": {
-      "name": "suggestion",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "documentId": {
-          "name": "documentId",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "documentCreatedAt": {
-          "name": "documentCreatedAt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "originalText": {
-          "name": "originalText",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "suggestedText": {
-          "name": "suggestedText",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "isResolved": {
-          "name": "isResolved",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "createdAt": {
-          "name": "createdAt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "suggestion_documentId_document_id_fk": {
-          "name": "suggestion_documentId_document_id_fk",
-          "tableFrom": "suggestion",
-          "tableTo": "document",
-          "columnsFrom": ["documentId"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}
     }

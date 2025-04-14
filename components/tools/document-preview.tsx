@@ -26,12 +26,18 @@ import { useArtifact } from "@/hooks/use-artifact";
 import equal from "fast-deep-equal";
 import { SpreadsheetEditor } from "@/components/sheet-editor";
 import { ImageEditor } from "@/components/image-editor";
+import { HtmlArtifactDisplay } from "@/artifacts/html/client";
 
 interface DocumentPreviewProps {
   isReadonly: boolean;
   result?: any;
   args?: any;
-  initialData?: { title: string; kind: ArtifactKind; content: string };
+  initialData?: {
+    title: string;
+    kind: ArtifactKind;
+    content: string;
+    extension?: string;
+  };
 }
 
 export function DocumentPreview({
@@ -40,7 +46,7 @@ export function DocumentPreview({
   args,
   initialData,
 }: DocumentPreviewProps) {
-  const { artifact, setArtifact } = useArtifact();
+  const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
 
   const shouldFetch = !initialData && result?.id;
   const { data: documents, isLoading: isDocumentsFetching } = useSWR<
@@ -70,11 +76,12 @@ export function DocumentPreview({
     if (initialData) {
       return {
         title: initialData.title,
-        kind: initialData.kind as ArtifactKind,
+        kind: initialData.kind,
         content: initialData.content,
         id: `preview-${Date.now()}`,
         createdAt: new Date().toISOString(),
         chatId: "noop",
+        extension: initialData.extension || "txt",
       };
     }
     if (previewDocument) {
@@ -83,11 +90,12 @@ export function DocumentPreview({
     if (artifact.status === "streaming") {
       return {
         title: artifact.title,
-        kind: artifact.kind as ArtifactKind,
+        kind: artifact.kind,
         content: artifact.content,
         id: artifact.documentId,
         createdAt: new Date().toISOString(),
         chatId: "noop",
+        extension: "txt",
       };
     }
     return null;
@@ -263,13 +271,13 @@ const DocumentHeader = memo(PureDocumentHeader, (prevProps, nextProps) => {
 });
 
 const DocumentContent = ({ document }: { document: Document }) => {
-  const { artifact } = useArtifact();
+  const { artifact, metadata, setMetadata, setArtifact } = useArtifact();
 
   const containerClassName = cn(
     "h-[257px] overflow-y-scroll border rounded-b-2xl dark:bg-muted border-t-0 dark:border-zinc-700",
     {
       "p-4 sm:px-14 sm:py-16": document.kind === "text",
-      "p-0": document.kind === "code",
+      "p-0": document.kind === "code" || document.kind === "html",
     }
   );
 
@@ -278,24 +286,27 @@ const DocumentContent = ({ document }: { document: Document }) => {
     isCurrentVersion: true,
     currentVersionIndex: 0,
     status: artifact.status,
-    saveContent: () => {},
-    suggestions: [],
+    onSaveContent: () => {},
+    mode: metadata?.mode || "view",
   };
 
   return (
     <div className={containerClassName}>
       {document.kind === "text" ? (
-        <Editor {...commonProps} onSaveContent={() => {}} />
+        <Editor {...commonProps} />
       ) : document.kind === "code" ? (
         <div className="flex flex-1 relative w-full">
           <div className="absolute inset-0">
-            <CodeEditor {...commonProps} onSaveContent={() => {}} />
+            <CodeEditor {...commonProps} />
           </div>
         </div>
       ) : document.kind === "sheet" ? (
         <div className="flex flex-1 relative size-full p-4">
           <div className="absolute inset-0">
-            <SpreadsheetEditor {...commonProps} />
+            <SpreadsheetEditor
+              {...commonProps}
+              saveContent={commonProps.onSaveContent}
+            />
           </div>
         </div>
       ) : document.kind === "image" ? (
@@ -307,6 +318,23 @@ const DocumentContent = ({ document }: { document: Document }) => {
           status={artifact.status}
           isInline={true}
         />
+      ) : document.kind === "html" ? (
+        <div className="flex flex-1 relative w-full">
+          <div className="absolute inset-0">
+            <HtmlArtifactDisplay
+              content={document.content ?? ""}
+              metadata={metadata as any}
+              setMetadata={setMetadata as any}
+              isLoading={false}
+              onSaveContent={commonProps.onSaveContent}
+              status={artifact.status}
+              isCurrentVersion={commonProps.isCurrentVersion}
+              currentVersionIndex={commonProps.currentVersionIndex}
+              mode={commonProps.mode}
+              setArtifact={setArtifact}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   );

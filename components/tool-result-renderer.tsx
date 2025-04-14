@@ -1,6 +1,6 @@
 import { SearchResults } from "./tools/search-results";
 
-import { DocumentToolCall, DocumentToolResult } from "./tools/document";
+import { DocumentToolResult } from "./tools/document";
 import { DocumentPreview } from "./tools/document-preview";
 import React, { useEffect, useMemo, useState, memo } from "react";
 
@@ -9,21 +9,15 @@ import { ToolCall } from "./tools/tool-call";
 import { Progress } from "./ui/progress";
 import { motion } from "framer-motion";
 import { DeepResearchResult } from "./tools/deep-research-result";
-import {
-  calculateProgressPercentage,
-  fileTypeToArtifactKind,
-  formatTime,
-  getFileInfoFromUrl,
-} from "@/lib/utils";
+import { calculateProgressPercentage, formatTime } from "@/lib/utils";
 import fastDeepEqual from "fast-deep-equal";
 import { PythonInterpreter } from "./tools/python-interpreter";
 import { ToolName, ToolReturnTypes } from "@/lib/ai/tools";
 import { ExtractStructuredDataResult } from "./tools/extract-structured-data-result";
 import { ListDirectoryResult } from "./tools/list-directory-result";
-import { Eye, Folder, MoveHorizontal, Pencil, Trash2 } from "lucide-react";
-import { FilePreview } from "./file-preview";
+import { Eye, Pencil, Trash2 } from "lucide-react";
 import { GetFileInfoResultComponent } from "./tools/get-file-info-result";
-import { EditFileResultComponent } from "./tools/edit-file-result";
+import { EditDocumentResultComponent } from "./tools/edit-document-result";
 
 const ToolResultRendererComponent = ({
   toolName,
@@ -63,14 +57,8 @@ const ToolResultRendererComponent = ({
         return <DeepResearchProgress state={state} />;
       case "createDocument":
         return <DocumentPreview isReadonly={false} args={args} />;
-      case "updateDocument":
-        return (
-          <DocumentToolCall type="update" args={args} isReadonly={false} />
-        );
       case "pythonInterpreter":
         return <PythonInterpreter args={args} isLoading={true} state={state} />;
-      case "fileWrite":
-        return <DocumentPreview isReadonly={false} args={args} />;
       case "fileRead":
         return <DocumentPreview isReadonly={false} args={args} />;
       case "extractStructuredData":
@@ -95,7 +83,7 @@ const ToolResultRendererComponent = ({
             customMessage={`Listing directory ${args.path || "/"}...`}
           />
         );
-      case "deleteFile":
+      case "deleteDocument":
         return (
           <ToolCall
             type="loading"
@@ -103,26 +91,6 @@ const ToolResultRendererComponent = ({
             toolName={toolName}
             icon={<Trash2 />}
             customMessage={`Deleting ${args.path}...`}
-          />
-        );
-      case "moveOrRenameFile":
-        return (
-          <ToolCall
-            type="loading"
-            args={args}
-            toolName={toolName}
-            icon={<MoveHorizontal />}
-            customMessage={`Moving ${args.sourcePath} to ${args.destinationPath}...`}
-          />
-        );
-      case "createDirectory":
-        return (
-          <ToolCall
-            type="loading"
-            args={args}
-            toolName={toolName}
-            icon={<Folder />}
-            customMessage={`Creating directory ${args.path}...`}
           />
         );
       case "getFileInfo":
@@ -135,7 +103,7 @@ const ToolResultRendererComponent = ({
             customMessage={`Getting info for ${args.path}...`}
           />
         );
-      case "editFile":
+      case "editDocument":
         return (
           <ToolCall
             type="loading"
@@ -143,6 +111,15 @@ const ToolResultRendererComponent = ({
             toolName={toolName}
             icon={<Pencil />}
             customMessage={`Editing ${args.path}...`}
+          />
+        );
+      case "readDocument":
+        return (
+          <ToolCall
+            type="loading"
+            args={args}
+            toolName={toolName}
+            customMessage={`Reading ${args.path}...`}
           />
         );
       default:
@@ -176,29 +153,6 @@ const ToolResultRendererComponent = ({
       return (
         <DocumentPreview isReadonly={false} result={createDocumentResult} />
       );
-    case "updateDocument":
-      const updateDocumentResult = result as ToolReturnTypes["updateDocument"];
-
-      if (updateDocumentResult.error) {
-        return (
-          <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
-            Error updating document: {updateDocumentResult.error}
-          </div>
-        );
-      }
-
-      return (
-        <DocumentToolResult
-          type="update"
-          isReadonly={false}
-          result={{
-            id: updateDocumentResult.id,
-            title: updateDocumentResult.title || "Untitled",
-            kind: updateDocumentResult.kind || "text",
-            content: updateDocumentResult.content || "",
-          }}
-        />
-      );
     case "pythonInterpreter":
       const pythonInterpreterResult =
         result as ToolReturnTypes["pythonInterpreter"];
@@ -211,39 +165,11 @@ const ToolResultRendererComponent = ({
           state={state}
         />
       );
-    case "fileWrite":
-      if (result && "file_path" in result) {
-        const fileWriteResult = result as ToolReturnTypes["fileWrite"];
-        if (fileWriteResult.error) {
-          return (
-            <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
-              Error writing file: {fileWriteResult.error}
-            </div>
-          );
-        }
-
-        const fileUrl = fileWriteResult.file_path || "";
-        const { fileType } = getFileInfoFromUrl(fileUrl, fileWriteResult.title);
-
-        const fileName =
-          fileWriteResult.file_path?.split("/").pop() || fileWriteResult.title;
-
-        return (
-          <FilePreview
-            filename={fileName}
-            url={fileUrl}
-            viewable={!!fileTypeToArtifactKind[fileType]}
-          />
-        );
-      } else {
-        return (
-          <div className="text-sm text-muted-foreground px-3 py-2 rounded-lg border bg-background">
-            Error displaying file write result: Invalid data structure.
-          </div>
-        );
-      }
     case "fileRead":
-      const fileReadResult = result as ToolReturnTypes["fileRead"];
+    case "readDocument":
+      const fileReadResult = result as
+        | ToolReturnTypes["fileRead"]
+        | ToolReturnTypes["readDocument"];
 
       return (
         <DocumentToolResult
@@ -253,22 +179,18 @@ const ToolResultRendererComponent = ({
             id: "1",
             title: fileReadResult.title,
             kind: fileReadResult.kind,
-            content: fileReadResult.content,
+            content: fileReadResult.content || "",
           }}
         />
       );
-    case "moveOrRenameFile":
-    case "deleteFile":
-      toolResult = result as ToolReturnTypes[typeof toolName];
-      const fileOpResult = result as
-        | ToolReturnTypes["deleteFile"]
-        | ToolReturnTypes["moveOrRenameFile"];
+    case "deleteDocument":
+      const fileOpResult = result as ToolReturnTypes["deleteDocument"];
 
       return (
         <ToolCall
           type={fileOpResult.success ? "success" : "error"}
           customMessage={fileOpResult.message}
-          icon={toolName === "deleteFile" ? <Trash2 /> : <MoveHorizontal />}
+          icon={<Trash2 />}
           args={args}
           result={result}
           toolName={toolName}
@@ -285,21 +207,12 @@ const ToolResultRendererComponent = ({
       return (
         <ListDirectoryResult result={listDirectoryResult} chatId={chatId} />
       );
-    case "createDirectory":
-      return (
-        <ToolCall
-          type="success"
-          args={args}
-          result={result}
-          toolName={toolName}
-        />
-      );
     case "getFileInfo":
       toolResult = result as ToolReturnTypes[typeof toolName];
       return <GetFileInfoResultComponent result={toolResult} />;
-    case "editFile":
-      const editFileResult = result as ToolReturnTypes[typeof toolName];
-      return <EditFileResultComponent result={editFileResult} />;
+    case "editDocument":
+      const editDocumentResult = result as ToolReturnTypes["editDocument"];
+      return <EditDocumentResultComponent result={editDocumentResult} />;
     default:
       return (
         <ToolCall

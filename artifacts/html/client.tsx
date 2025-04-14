@@ -13,8 +13,6 @@ import {
   ExternalLink,
   Code,
   CheckCircle,
-  Minimize,
-  Maximize,
   Copy,
 } from "lucide-react";
 import {
@@ -30,7 +28,7 @@ interface Metadata {
 
 type HtmlArtifactDisplayProps = Omit<
   ArtifactContent<Metadata>,
-  "suggestions" | "getDocumentContentById" | "title" | "isInline"
+  "getDocumentContentById" | "title" | "isInline"
 > &
   Omit<EditorProps, "content">;
 
@@ -44,9 +42,18 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
   isCurrentVersion = true,
   currentVersionIndex = 0,
 }) => {
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [previewKey, setPreviewKey] = useState(0);
+  const [localViewMode, setLocalViewMode] = useState<"code" | "preview">(
+    metadata?.viewMode || "preview"
+  );
+
+  console.log(
+    "[HtmlArtifactDisplay] Rendering. Initial localViewMode:",
+    localViewMode,
+    "Metadata prop:",
+    metadata
+  );
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(content);
@@ -56,10 +63,6 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
 
   const refreshPreview = () => {
     setPreviewKey((prev) => prev + 1);
-  };
-
-  const toggleFullscreen = () => {
-    setIsFullscreen(!isFullscreen);
   };
 
   const openInNewTab = () => {
@@ -80,19 +83,23 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
   return (
     <div
       className={cn(
-        "flex flex-col border rounded-md shadow-sm bg-card font-['Noto_Sans']",
-        isFullscreen ? "fixed inset-4 z-50" : "h-full"
+        "flex flex-col border rounded-md shadow-sm bg-card font-['Noto_Sans'] h-full"
       )}
     >
       <Tabs
-        defaultValue={metadata?.viewMode || "preview"}
-        value={metadata?.viewMode}
-        onValueChange={(value) =>
+        value={localViewMode}
+        onValueChange={(value) => {
+          const newMode = value as "code" | "preview";
+          console.log("[HtmlArtifactDisplay] Tab changed to value:", newMode);
+          setLocalViewMode(newMode);
+          console.log("[HtmlArtifactDisplay] Calling setMetadata prop with:", {
+            viewMode: newMode,
+          });
           setMetadata((prev) => ({
             ...prev,
-            viewMode: value as "code" | "preview",
-          }))
-        }
+            viewMode: newMode,
+          }));
+        }}
         className="size-full flex flex-col"
       >
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
@@ -117,7 +124,7 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
 
           <div className="flex items-center gap-1">
             <TooltipProvider>
-              {metadata?.viewMode === "preview" && (
+              {localViewMode === "preview" && (
                 <>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -155,7 +162,7 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
                 </>
               )}
 
-              {metadata?.viewMode === "code" && (
+              {localViewMode === "code" && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -177,47 +184,21 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
                   </TooltipContent>
                 </Tooltip>
               )}
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    onClick={toggleFullscreen}
-                  >
-                    {isFullscreen ? (
-                      <Minimize className="size-4" />
-                    ) : (
-                      <Maximize className="size-4" />
-                    )}
-                    <span className="sr-only">
-                      {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</p>
-                </TooltipContent>
-              </Tooltip>
             </TooltipProvider>
           </div>
         </div>
 
         <TabsContent
           value="code"
-          className="flex-1 m-0 p-0 data-[state=active]:flex flex-col"
+          className="flex-1 m-0 p-0 data-[state=active]:flex flex-col h-full"
         >
-          <div className="flex-1 overflow-auto p-1">
-            <CodeEditor
-              content={content}
-              onSaveContent={onSaveContent}
-              status={status}
-              isCurrentVersion={isCurrentVersion}
-              currentVersionIndex={currentVersionIndex}
-              suggestions={[]}
-            />
-          </div>
+          <CodeEditor
+            content={content}
+            onSaveContent={onSaveContent}
+            status={status}
+            isCurrentVersion={isCurrentVersion}
+            currentVersionIndex={currentVersionIndex}
+          />
         </TabsContent>
 
         <TabsContent
@@ -245,11 +226,6 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
 export const htmlArtifact = new Artifact<"html", Metadata>({
   kind: "html",
   description: "Useful for generating and previewing HTML content.",
-  initialize: async ({ setMetadata }) => {
-    setMetadata({
-      viewMode: "preview", // Default to preview mode
-    });
-  },
   onStreamPart: ({ streamPart, setArtifact }) => {
     // Type check needs update elsewhere (DataStreamDelta type)
     if (streamPart.type === "html-delta") {
@@ -273,7 +249,6 @@ export const htmlArtifact = new Artifact<"html", Metadata>({
       }));
     }
   },
-  // Use the new component for rendering content
   content: (props) => <HtmlArtifactDisplay {...props} />,
   actions: [
     {
@@ -290,7 +265,8 @@ export const htmlArtifact = new Artifact<"html", Metadata>({
       onClick: ({ handleVersionChange }) => {
         handleVersionChange("next");
       },
-      isDisabled: ({ isCurrentVersion }) => isCurrentVersion,
+      isDisabled: ({ documents, currentVersionIndex }) =>
+        !documents || currentVersionIndex === documents.length - 1,
     },
     {
       icon: <CopyIcon size={18} />,

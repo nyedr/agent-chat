@@ -11,6 +11,7 @@ import {
   Presentation,
   Book,
   FileQuestion,
+  Table,
 } from "lucide-react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -506,16 +507,19 @@ export function getFileIcon(fileType: string): LucideIcon {
   switch (fileType) {
     case "text":
       return FileText;
+    case "sheet":
+      return Table;
+    case "code":
+    case "html":
+      return FileCode;
+    case "image":
+      return FileImage;
+    case "presentation":
+      return Presentation;
     case "pdf":
       return FileText;
     case "document":
       return Book;
-    case "presentation":
-      return Presentation;
-    case "code":
-      return FileCode;
-    case "image":
-      return FileImage;
     case "audio":
       return FileAudio;
     case "video":

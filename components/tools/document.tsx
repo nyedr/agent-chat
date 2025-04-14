@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { useArtifact } from "@/hooks/use-artifact";
 
 const getActionText = (
-  type: "create" | "update" | "request-suggestions" | "read",
+  type: "create" | "update" | "read",
   tense: "present" | "past"
 ) => {
   switch (type) {
@@ -20,10 +20,6 @@ const getActionText = (
       return tense === "present" ? "Creating" : "Created";
     case "update":
       return tense === "present" ? "Updating" : "Updated";
-    case "request-suggestions":
-      return tense === "present"
-        ? "Adding suggestions"
-        : "Added suggestions to";
     case "read":
       return tense === "present" ? "Reading" : "Read";
     default:
@@ -32,7 +28,7 @@ const getActionText = (
 };
 
 interface DocumentToolResultProps {
-  type: "create" | "update" | "request-suggestions" | "read";
+  type: "create" | "update" | "read";
   result: { id: string; title: string; kind: ArtifactKind; content?: string };
   isReadonly: boolean;
 }
@@ -72,7 +68,6 @@ function PureDocumentToolResult({
           title: result.title,
           isVisible: true,
           status: "idle",
-          boundingBox,
         });
       }}
     >
@@ -81,8 +76,6 @@ function PureDocumentToolResult({
           <FileIcon />
         ) : type === "update" ? (
           <PencilEditIcon />
-        ) : type === "request-suggestions" ? (
-          <MessageIcon />
         ) : type === "read" ? (
           <EyeIcon />
         ) : null}
@@ -97,7 +90,7 @@ function PureDocumentToolResult({
 export const DocumentToolResult = memo(PureDocumentToolResult, () => true);
 
 interface DocumentToolCallProps {
-  type: "create" | "update" | "request-suggestions";
+  type: "create" | "update";
   args: { title: string };
   isReadonly: boolean;
 }
@@ -143,8 +136,6 @@ function PureDocumentToolCall({
             <FileIcon />
           ) : type === "update" ? (
             <PencilEditIcon />
-          ) : type === "request-suggestions" ? (
-            <MessageIcon />
           ) : type === "read" ? (
             <EyeIcon />
           ) : null}

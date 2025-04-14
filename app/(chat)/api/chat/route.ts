@@ -14,12 +14,9 @@ import { systemPrompt } from "@/lib/ai/prompts";
 import {
   addChatMessage,
   createNewChat,
-  deleteChatById,
-  deleteDocumentsByChatId,
+  deleteByChatId,
   getAllChats,
   getChatById,
-  getDocumentsByChatId,
-  getUploadedFiles,
   updateChat,
 } from "@/app/(chat)/actions";
 import {
@@ -38,21 +35,16 @@ const deepResearchTools: ToolName[] = ["deepResearch"];
 const allTools: ToolName[] = [
   ...deepResearchTools,
   "createDocument",
-  "updateDocument",
   "imageSearch",
   "videoSearch",
   "searchWeb",
   "scrapeUrl",
   "pythonInterpreter",
   "fileRead",
-  "fileWrite",
-  "listDirectory",
-  "deleteFile",
-  "moveOrRenameFile",
-  "extractStructuredData",
-  "editFile",
-  "createDirectory",
+  // "extractStructuredData",
+  "editDocument",
   "getFileInfo",
+  "readDocument",
 ];
 
 export async function POST(request: Request) {
@@ -70,7 +62,8 @@ export async function POST(request: Request) {
     seed,
     usePreScrapingRerank,
     maxFinalResults,
-    experimental_context = true,
+    experimental_context = false,
+    isRetry = false,
   }: {
     chatId: string;
     messages: Array<Message>;
@@ -86,6 +79,7 @@ export async function POST(request: Request) {
     usePreScrapingRerank?: boolean;
     maxFinalResults?: number;
     experimental_context?: boolean;
+    isRetry?: boolean;
   } = await request.json();
 
   const userMessage = getMostRecentUserMessage(messages);
@@ -94,14 +88,14 @@ export async function POST(request: Request) {
     return new Response("No user message found", { status: 400 });
   }
 
-  console.log("userMessage:", userMessage);
+  const {
+    data: chatData,
+    documents: chatDocuments,
+    uploadedFiles,
+    error: chatError,
+  } = await getChatById({ id: chatId });
 
-  const chat = await getChatById({ id: chatId });
-
-  if (!chat.data || chat.error !== null || !chat.data.chat) {
-    console.log("Chat not found, creating new chat");
-    // const title = await generateTitleFromUserMessage({ message: userMessage });
-
+  if (chatError || !chatData || !chatData.chat) {
     const title =
       typeof userMessage.content === "string"
         ? userMessage.content
@@ -115,7 +109,14 @@ export async function POST(request: Request) {
     if (!newChat.success) {
       return new Response("Failed to create new chat", { status: 500 });
     }
+  } else {
+    console.log(
+      `Fetched chat ${chatId}, ${chatDocuments.length} docs, ${uploadedFiles.length} uploads.`
+    );
   }
+
+  const currentDocuments = chatDocuments || [];
+  const currentUploadedFiles = uploadedFiles || [];
 
   const validMessages = messages
     .with(-1, userMessage)
@@ -123,24 +124,18 @@ export async function POST(request: Request) {
       return {
         content: rest.content,
         role: rest.role,
-        // experimental_attachments: rest.experimental_attachments,
+        experimental_attachments: rest.experimental_attachments,
       };
     }) satisfies CoreMessage[];
 
   console.log("validMessages:", validMessages);
 
-  await addChatMessage({
-    chatId,
-    message: userMessage,
-  });
-
-  const chatDocuments = await getDocumentsByChatId({
-    chatId,
-  });
-  const uploadedFiles = await getUploadedFiles(chatId);
-
-  console.log("chatDocuments:", chatDocuments);
-  console.log("uploadedFiles:", uploadedFiles);
+  if (!isRetry) {
+    await addChatMessage({
+      chatId,
+      message: userMessage,
+    });
+  }
 
   const extractedContextFromUserMessage = experimental_context
     ? await extractMessageContext(userMessage.content)
@@ -162,8 +157,8 @@ export async function POST(request: Request) {
         model: myProvider.chatModel(modelId),
         system: systemPrompt({
           tools: experimental_deepResearch ? deepResearchTools : allTools,
-          documents: chatDocuments,
-          uploadedFiles: uploadedFiles,
+          documents: currentDocuments,
+          uploadedFiles: currentUploadedFiles,
           context: extractedContextFromUserMessage?.context,
           currentDate: new Date().toISOString(),
         }),
@@ -200,9 +195,10 @@ export async function POST(request: Request) {
             await addChatMessage({
               chatId,
               message: assistantMessage,
+              isRetry,
             });
           } catch (error) {
-            console.error("Failed to save chat");
+            console.error("Failed to save chat", error);
           }
         },
         ...(maxTokens !== undefined && { maxTokens }),
@@ -235,25 +231,14 @@ export async function DELETE(request: Request) {
     return Response.json({ error: "No ID provided" }, { status: 400 });
   }
 
-  // 1. Delete associated documents from DB
+  // Call the renamed function which handles document and chat deletion
   try {
-    await deleteDocumentsByChatId({ chatId: id });
-    console.log(`Deleted documents for chat ID: ${id}`);
-  } catch (error) {
-    console.error(`Error deleting documents for chat ID ${id}:`, error);
-    // Decide if we should proceed or return error
-  }
+    await deleteByChatId(id);
+    console.log(`Successfully deleted DB records for chat ${id}.`);
 
-  // 2. Delete chat entry from DB
-  try {
-    await deleteChatById(id);
-    console.log(`Deleted chat entry for chat ID: ${id}`);
-
-    // 3. Delete uploads directory from filesystem *after* successful DB deletion
+    // Delete uploads directory from filesystem *after* successful DB deletion
     const uploadDirPath = path.join(UPLOADS_DIR, id);
     try {
-      // Check if directory exists before attempting removal
-      // Note: existsSync is sync, but acceptable here before the async rm
       if (fs.existsSync(uploadDirPath)) {
         await rm(uploadDirPath, { recursive: true, force: true });
         console.log(`Deleted uploads directory: ${uploadDirPath}`);
@@ -267,7 +252,7 @@ export async function DELETE(request: Request) {
         `Error deleting uploads directory ${uploadDirPath}:`,
         fsError
       );
-      // Log error but potentially still return success as chat is deleted
+      // Log error but still return success as DB records are deleted
     }
 
     return Response.json({
@@ -275,8 +260,10 @@ export async function DELETE(request: Request) {
       message: "Chat and associated data deleted",
     });
   } catch (error) {
-    console.error(`Error deleting chat ID ${id}:`, error);
-    return Response.json({ error: "Failed to delete chat" }, { status: 500 });
+    console.error(`Error in DELETE route for chat ID ${id}:`, error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to delete chat";
+    return Response.json({ error: errorMessage }, { status: 500 });
   }
 }
 

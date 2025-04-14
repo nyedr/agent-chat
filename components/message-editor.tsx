@@ -129,6 +129,12 @@ export function MessageEditor({
                   const editedMessage = {
                     ...messages[editedMessageIndex],
                     content: draftContent,
+                    parts: messages[editedMessageIndex].parts?.map((part) => {
+                      if (part.type === "text") {
+                        return { ...part, text: draftContent };
+                      }
+                      return part;
+                    }),
                   };
 
                   return [

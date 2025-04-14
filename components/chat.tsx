@@ -164,7 +164,6 @@ export function Chat({
         messages={messagesAsMessage}
         setMessages={setMessagesAsMessage}
         reload={reload}
-        isReadonly={false}
         status={status}
       />
     </>

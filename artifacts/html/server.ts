@@ -1,27 +1,12 @@
 import { createDocumentHandler } from "@/lib/artifacts/server";
-import { DataStreamWriter, streamText } from "ai";
+import { streamText } from "ai";
 import { DEFAULT_MODEL_NAME, myProvider } from "@/lib/ai/models";
 import { htmlPrompt, updateDocumentPrompt } from "@/lib/ai/prompts";
-
-const initialHtmlContent = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Document</title>
-    <style>
-        body { font-family: sans-serif; padding: 1rem; }
-    </style>
-</head>
-<body>
-    <h1>Welcome</h1>
-    <p>This is a new HTML document.</p>
-</body>
-</html>`;
+import { saveDocument } from "@/app/(chat)/actions";
 
 export const htmlDocumentHandler = createDocumentHandler({
   kind: "html",
-  onCreateDocument: async ({ title, dataStream }) => {
+  onCreateDocument: async ({ id, title, dataStream }) => {
     let draftContent = "";
 
     const { fullStream } = streamText({
@@ -38,11 +23,22 @@ export const htmlDocumentHandler = createDocumentHandler({
 
         draftContent += textDelta;
 
-        dataStream.writeMessageAnnotation({
+        dataStream.writeData({
           type: "html-delta",
           content: textDelta,
         });
       }
+    }
+
+    try {
+      await saveDocument({
+        id: id,
+        title: title,
+        kind: "html",
+        content: draftContent,
+      });
+    } catch (error) {
+      console.error("Error saving final HTML content:", error);
     }
 
     return draftContent;
@@ -64,11 +60,23 @@ export const htmlDocumentHandler = createDocumentHandler({
 
         draftContent += textDelta;
 
-        dataStream.writeMessageAnnotation({
+        dataStream.writeData({
           type: "html-delta",
           content: textDelta,
         });
       }
+    }
+
+    try {
+      await saveDocument({
+        id: document.id,
+        title: document.title,
+        kind: "html",
+        content: draftContent,
+        extension: document.extension,
+      });
+    } catch (error) {
+      console.error("Error saving updated HTML content:", error);
     }
 
     return draftContent;

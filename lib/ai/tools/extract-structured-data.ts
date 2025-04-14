@@ -71,6 +71,57 @@ function createDynamicSchema(schemaString: string): z.ZodTypeAny {
   }
 }
 
+export const extractDataFromContent = async ({
+  schema,
+  content,
+  maxContentLength = 32000,
+}: {
+  schema: string;
+  content: string;
+  maxContentLength?: number;
+}) => {
+  const dynamicSchema = createDynamicSchema(schema);
+
+  const truncatedContent =
+    content.length > maxContentLength
+      ? content.substring(0, maxContentLength) + "... [CONTENT TRUNCATED]"
+      : content;
+
+  try {
+    // Generate the structured data using the dynamic schema
+    const { object: extractedData } = await generateObject({
+      model: myProvider.chatModel(process.env.NEXT_PUBLIC_DEFAULT_LIGHT_MODEL!),
+      messages: [
+        {
+          role: "system",
+          content: `You are a structured data extraction assistant. Your task is to extract structured data according to a schema.`,
+        },
+        {
+          role: "user",
+          content: `Extract structured data from the following content according to the schema below.
+
+                SCHEMA:
+                ${schema}
+
+                CONTENT:
+                ${truncatedContent}
+
+                Extract and return a valid JSON object matching the schema. If you cannot extract certain fields, use null for those fields.`,
+        },
+      ],
+      schema: dynamicSchema,
+      schemaDescription: "Structured data extracted from content",
+      temperature: 0.1,
+      mode: "auto",
+    });
+
+    return extractedData;
+  } catch (error) {
+    console.error("Error extracting structured data:", error);
+    throw error;
+  }
+};
+
 export const extractStructuredData = ({
   dataStream,
   chatId,
@@ -96,19 +147,11 @@ export const extractStructuredData = ({
         .describe(
           "JSON schema defining the desired output structure. Provide as a string representation of a JSON object with properties and their types."
         ),
-      crawlingStrategy: z
-        .enum(["playwright", "http"])
-        .optional()
-        .default("playwright")
-        .describe(
-          "If url is provided, specify 'playwright' for dynamic sites or 'http' for simpler/faster scraping. Default to 'playwright'."
-        ),
     }),
     execute: async ({
       url,
       filePath,
       schema,
-      crawlingStrategy = "playwright",
     }): Promise<ExtractStructuredDataToolResult> => {
       try {
         // Validate inputs - need either url OR filePath, but not both or neither
@@ -137,7 +180,7 @@ export const extractStructuredData = ({
           // Use scrapeAndProcessUrls directly
           const scrapeResponse = await scrapeAndProcessUrls({
             urls: [url],
-            crawlingStrategy,
+            crawlingStrategy: "http",
           });
 
           // Check if we got a result for the URL
@@ -214,71 +257,27 @@ export const extractStructuredData = ({
           }),
         });
 
-        const MAX_CONTENT_LENGTH = 32000;
-        const truncatedContent =
-          content.length > MAX_CONTENT_LENGTH
-            ? content.substring(0, MAX_CONTENT_LENGTH) +
-              "... [CONTENT TRUNCATED]"
-            : content;
+        const extractedData = await extractDataFromContent({
+          schema,
+          content,
+        });
 
-        const dynamicSchema = createDynamicSchema(schema);
-
-        try {
-          // Generate the structured data using the dynamic schema
-          const { object: extractedData } = await generateObject({
-            model: myProvider.chatModel(
-              process.env.NEXT_PUBLIC_DEFAULT_LIGHT_MODEL!
-            ),
-            messages: [
-              {
-                role: "system",
-                content: `You are a structured data extraction assistant. Your task is to extract structured data according to a schema.`,
-              },
-              {
-                role: "user",
-                content: `Extract structured data from the following content according to the schema below.
-
-                SCHEMA:
-                ${schema}
-
-                CONTENT:
-                ${truncatedContent}
-
-                Extract and return a valid JSON object matching the schema. If you cannot extract certain fields, use null for those fields.`,
-              },
-            ],
-            schema: dynamicSchema,
-            schemaDescription: "Structured data extracted from content",
-            temperature: 0.1,
-            mode: "auto",
-          });
-
-          // Stream the extracted data
-          dataStream.writeData({
-            type: "extraction-complete",
-            content: JSON.stringify({
-              data: extractedData,
-              schema,
-              source,
-            }),
-          });
-
-          return {
-            success: true,
+        // Stream the extracted data
+        dataStream.writeData({
+          type: "extraction-complete",
+          content: JSON.stringify({
             data: extractedData,
             schema,
             source,
-          };
-        } catch (extractionError) {
-          return {
-            success: false,
-            source,
-            schema,
-            error: `Failed to extract structured data: ${
-              (extractionError as Error).message
-            }`,
-          };
-        }
+          }),
+        });
+
+        return {
+          success: true,
+          data: extractedData,
+          schema,
+          source,
+        };
       } catch (error) {
         console.error("Error in structured data extraction:", error);
         return {

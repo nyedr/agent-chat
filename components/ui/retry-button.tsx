@@ -42,6 +42,7 @@ const RetryButton = forwardRef<HTMLButtonElement, RetryButtonProps>(
           body: {
             seed,
             temperature: 0.6,
+            isRetry: true,
           },
           headers: {
             "X-Seed": String(seed),

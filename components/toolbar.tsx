@@ -29,21 +29,18 @@ import {
 import {
   ArrowUpIcon,
   CodeIcon,
-  FileIcon,
   LogsIcon,
   MessageIcon,
   PenIcon,
   SparklesIcon,
   StopIcon,
   SummarizeIcon,
-  TerminalIcon,
 } from "./icons";
 import { ArtifactKind } from "./artifact";
 
 type ToolProps = {
   type:
     | "final-polish"
-    | "request-suggestions"
     | "adjust-reading-level"
     | "code-review"
     | "add-comments"
@@ -100,14 +97,6 @@ const Tool = ({
           role: "user",
           content:
             "Please add final polish and check for grammar, add section titles for better structure, and ensure everything reads smoothly.",
-        });
-
-        setSelectedTool(null);
-      } else if (type === "request-suggestions") {
-        append({
-          role: "user",
-          content:
-            "Please add suggestions you have that could improve the writing.",
         });
 
         setSelectedTool(null);
@@ -290,7 +279,6 @@ const toolsByArtifactKind: Record<
   Array<{
     type:
       | "final-polish"
-      | "request-suggestions"
       | "adjust-reading-level"
       | "code-review"
       | "add-comments"
@@ -300,6 +288,13 @@ const toolsByArtifactKind: Record<
   }>
 > = {
   image: [],
+  html: [
+    {
+      type: "final-polish",
+      description: "Improve UI and UX, make it more aesthetic",
+      icon: <PenIcon />,
+    },
+  ],
   text: [
     {
       type: "final-polish",
@@ -312,8 +307,8 @@ const toolsByArtifactKind: Record<
       icon: <SummarizeIcon />,
     },
     {
-      type: "request-suggestions",
-      description: "Request suggestions",
+      type: "add-comments",
+      description: "Add comments",
       icon: <MessageIcon />,
     },
   ],
@@ -336,8 +331,8 @@ const toolsByArtifactKind: Record<
       icon: <SparklesIcon />,
     },
     {
-      type: "request-suggestions",
-      description: "Analyze and visualize data",
+      type: "add-comments",
+      description: "Add comments",
       icon: <MessageIcon />,
     },
   ],
