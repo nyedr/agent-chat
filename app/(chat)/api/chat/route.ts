@@ -45,6 +45,7 @@ const allTools: ToolName[] = [
   "editDocument",
   "getFileInfo",
   "readDocument",
+  "shellExec",
 ];
 
 export async function POST(request: Request) {

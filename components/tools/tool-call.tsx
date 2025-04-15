@@ -47,7 +47,7 @@ function PureToolCall({
                   )}
                 </>
               )}
-              <span className="text-sm font-medium">
+              <span className="text-sm font-medium truncate max-w-[500px]">
                 {customMessage ||
                   (isRunning
                     ? `Calling Tool: ${toolName}`

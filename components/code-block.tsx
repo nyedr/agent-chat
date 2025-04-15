@@ -27,22 +27,22 @@ export const CodeBlock: FC<CodeBlockProps> = ({
   useMinimal,
   ...props
 }) => {
-  const hasResult = Boolean(result);
   const codeContent =
     typeof children === "string"
       ? children
       : String(children).replace(/\n$/, "");
+  const hasResult = Boolean(result);
 
   return (
     <div
       className={cn(
         "flex max-w-3xl flex-col border border-border font-['Noto_Sans']",
         {
-          "my-2 rounded-md": !useMinimal && !hasResult,
+          "my-2 rounded-md": !useMinimal,
         }
       )}
     >
-      {!hasResult && (
+      {!useMinimal && (
         <div className="flex flex-row items-center justify-between p-1 px-3 bg-muted text-muted-foreground">
           <div className="flex flex-row gap-2 text-sm">
             {capitalize(language)}
@@ -57,8 +57,8 @@ export const CodeBlock: FC<CodeBlockProps> = ({
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           backgroundColor: "#282A36",
-          borderBottomLeftRadius: hasResult || useMinimal ? 0 : undefined,
-          borderBottomRightRadius: hasResult || useMinimal ? 0 : undefined,
+          borderBottomLeftRadius: useMinimal ? 0 : undefined,
+          borderBottomRightRadius: useMinimal ? 0 : undefined,
           fontSize: "0.875rem",
         }}
         PreTag="div"

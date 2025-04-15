@@ -18,6 +18,7 @@ import { ListDirectoryResult } from "./tools/list-directory-result";
 import { Eye, Pencil, Trash2 } from "lucide-react";
 import { GetFileInfoResultComponent } from "./tools/get-file-info-result";
 import { EditDocumentResultComponent } from "./tools/edit-document-result";
+import { CodeBlock } from "./code-block";
 
 const ToolResultRendererComponent = ({
   toolName,
@@ -122,6 +123,8 @@ const ToolResultRendererComponent = ({
             customMessage={`Reading ${args.path}...`}
           />
         );
+      case "shellExec":
+        return <CodeBlock language="bash">{args.command}</CodeBlock>;
       default:
         return <ToolCall type="loading" args={args} toolName={toolName} />;
     }
@@ -213,6 +216,21 @@ const ToolResultRendererComponent = ({
     case "editDocument":
       const editDocumentResult = result as ToolReturnTypes["editDocument"];
       return <EditDocumentResultComponent result={editDocumentResult} />;
+    case "shellExec":
+      const shellExecResult = result as ToolReturnTypes["shellExec"];
+      const exitCode = shellExecResult.exitCode;
+
+      return (
+        <CodeBlock
+          useMinimal={false}
+          result={
+            exitCode === 0 ? shellExecResult.stdout : shellExecResult.stderr
+          }
+          language="bash"
+        >
+          {args.command}
+        </CodeBlock>
+      );
     default:
       return (
         <ToolCall

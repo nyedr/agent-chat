@@ -25,6 +25,7 @@ import { scrapeUrl } from "./scrape-url";
 import { editDocument, type EditDocumentResult } from "./edit-document";
 import { getFileInfo, type GetFileInfoResult } from "./get-file-info";
 import { readDocument, type ReadDocumentResult } from "./read-document";
+import { ShellExecResult, shellExecTool } from "./shell-exec";
 
 interface ToolReturnTypes {
   createDocument: CreateDocumentToolResult;
@@ -41,6 +42,7 @@ interface ToolReturnTypes {
   editDocument: EditDocumentResult;
   getFileInfo: GetFileInfoResult;
   readDocument: ReadDocumentResult;
+  shellExec: ShellExecResult;
 }
 
 type ToolName = keyof ToolReturnTypes;
@@ -140,6 +142,10 @@ export function createModelTools(params: CreateModelToolsParams) {
     }),
     readDocument: readDocument({
       dataStream,
+    }),
+    shellExec: shellExecTool({
+      dataStream,
+      chatId,
     }),
   };
 }
