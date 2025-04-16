@@ -2,25 +2,10 @@ import { Artifact, ArtifactContent } from "@/components/create-artifact";
 import { CodeEditor, EditorProps } from "@/components/code-editor";
 import { CopyIcon, MessageIcon, RedoIcon, UndoIcon } from "@/components/icons";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import React, { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  RefreshCw,
-  Eye,
-  ExternalLink,
-  Code,
-  CheckCircle,
-  Copy,
-} from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 
 interface Metadata {
   viewMode: "code" | "preview";
@@ -42,35 +27,6 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
   isCurrentVersion = true,
   currentVersionIndex = 0,
 }) => {
-  const [isCopied, setIsCopied] = useState(false);
-  const [previewKey, setPreviewKey] = useState(0);
-  const [localViewMode, setLocalViewMode] = useState<"code" | "preview">(
-    metadata?.viewMode || "preview"
-  );
-
-  console.log(
-    "[HtmlArtifactDisplay] Rendering. Initial localViewMode:",
-    localViewMode,
-    "Metadata prop:",
-    metadata
-  );
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(content);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  const refreshPreview = () => {
-    setPreviewKey((prev) => prev + 1);
-  };
-
-  const openInNewTab = () => {
-    const blob = new Blob([content], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-  };
-
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -87,11 +43,10 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
       )}
     >
       <Tabs
-        value={localViewMode}
+        value={metadata?.viewMode || "preview"}
         onValueChange={(value) => {
           const newMode = value as "code" | "preview";
           console.log("[HtmlArtifactDisplay] Tab changed to value:", newMode);
-          setLocalViewMode(newMode);
           console.log("[HtmlArtifactDisplay] Calling setMetadata prop with:", {
             viewMode: newMode,
           });
@@ -102,92 +57,6 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
         }}
         className="size-full flex flex-col"
       >
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/50">
-          <div className="flex items-center gap-2">
-            <TabsList className="h-9">
-              <TabsTrigger
-                value="preview"
-                className="flex items-center gap-1.5 text-xs px-3"
-              >
-                <Eye className="size-3.5" />
-                Preview
-              </TabsTrigger>
-              <TabsTrigger
-                value="code"
-                className="flex items-center gap-1.5 text-xs px-3"
-              >
-                <Code className="size-3.5" />
-                Code Editor
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <TooltipProvider>
-              {localViewMode === "preview" && (
-                <>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        onClick={refreshPreview}
-                      >
-                        <RefreshCw className="size-4" />
-                        <span className="sr-only">Refresh Preview</span>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Refresh Preview</p>
-                    </TooltipContent>
-                  </Tooltip>
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8"
-                        onClick={openInNewTab}
-                      >
-                        <ExternalLink className="size-4" />
-                        <span className="sr-only">Open in New Tab</span>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Open in New Tab</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </>
-              )}
-
-              {localViewMode === "code" && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={copyToClipboard}
-                    >
-                      {isCopied ? (
-                        <CheckCircle className="size-4 text-green-500" />
-                      ) : (
-                        <Copy className="size-4" />
-                      )}
-                      <span className="sr-only">Copy Code</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{isCopied ? "Copied!" : "Copy Code"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </TooltipProvider>
-          </div>
-        </div>
-
         <TabsContent
           value="code"
           className="flex-1 m-0 p-0 data-[state=active]:flex flex-col h-full"
@@ -205,10 +74,9 @@ export const HtmlArtifactDisplay: React.FC<HtmlArtifactDisplayProps> = ({
           value="preview"
           className="flex-1 m-0 p-0 data-[state=active]:flex flex-col"
         >
-          <div className="flex-1 size-full overflow-x-hidden overflow-y-auto bg-background rounded-sm p-1">
+          <div className="flex-1 size-full overflow-x-hidden overflow-y-auto bg-background">
             <div className="bg-foreground rounded-sm size-full">
               <iframe
-                key={previewKey}
                 srcDoc={content}
                 sandbox="allow-scripts allow-same-origin"
                 title="HTML Preview"

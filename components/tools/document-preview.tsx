@@ -46,7 +46,7 @@ export function DocumentPreview({
   args,
   initialData,
 }: DocumentPreviewProps) {
-  const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
+  const { artifact, setArtifact } = useArtifact();
 
   const shouldFetch = !initialData && result?.id;
   const { data: documents, isLoading: isDocumentsFetching } = useSWR<

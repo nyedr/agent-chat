@@ -61,6 +61,7 @@ export const textArtifact = new Artifact<"text">({
         status={status}
         currentVersionIndex={currentVersionIndex}
         isCurrentVersion={isCurrentVersion}
+        className="pb-10 max-w-prose"
       />
     );
   },

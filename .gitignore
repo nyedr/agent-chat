@@ -65,3 +65,5 @@ pnpm-lock.yaml
 todos.md
 
 .venv
+
+/wsl_sessions

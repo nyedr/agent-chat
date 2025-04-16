@@ -20,6 +20,15 @@ import { GetFileInfoResultComponent } from "./tools/get-file-info-result";
 import { EditDocumentResultComponent } from "./tools/edit-document-result";
 import { CodeBlock } from "./code-block";
 
+interface ToolResultRendererProps {
+  toolName: ToolName;
+  state: string;
+  args: any;
+  result?: ToolReturnTypes[ToolName];
+  isLoading: boolean;
+  chatId: string;
+}
+
 const ToolResultRendererComponent = ({
   toolName,
   state,
@@ -27,15 +36,8 @@ const ToolResultRendererComponent = ({
   result,
   isLoading,
   chatId,
-}: {
-  toolName: ToolName;
-  state: string;
-  args: any;
-  result?: ToolReturnTypes[typeof toolName];
-  isLoading: boolean;
-  chatId: string;
-}) => {
-  console.log("tool info", toolName, args, result, isLoading, chatId, state);
+}: ToolResultRendererProps) => {
+  console.log("tool info", toolName, args, result, state);
 
   let toolResult = result as ToolReturnTypes[typeof toolName];
 
@@ -218,15 +220,11 @@ const ToolResultRendererComponent = ({
       return <EditDocumentResultComponent result={editDocumentResult} />;
     case "shellExec":
       const shellExecResult = result as ToolReturnTypes["shellExec"];
-      const exitCode = shellExecResult.exitCode;
 
       return (
         <CodeBlock
-          useMinimal={false}
-          result={
-            exitCode === 0 ? shellExecResult.stdout : shellExecResult.stderr
-          }
           language="bash"
+          result={shellExecResult.stdout || shellExecResult.stderr}
         >
           {args.command}
         </CodeBlock>

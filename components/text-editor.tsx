@@ -15,6 +15,7 @@ import {
   buildContentFromDocument,
   buildDocumentFromContent,
 } from "@/lib/editor/functions";
+import { cn } from "@/lib/utils";
 
 export type EditorProps = {
   content: string;
@@ -22,9 +23,15 @@ export type EditorProps = {
   status: "streaming" | "idle";
   isCurrentVersion: boolean;
   currentVersionIndex: number;
+  className?: string;
 };
 
-function PureEditor({ content, onSaveContent, status }: EditorProps) {
+function PureEditor({
+  content,
+  onSaveContent,
+  status,
+  className,
+}: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
 
@@ -82,7 +89,10 @@ function PureEditor({ content, onSaveContent, status }: EditorProps) {
 
   return (
     <div
-      className="relative prose max-w-full dark:prose-invert prose-headings:font-medium prose-headings:tracking-tight prose-h1:font-semibold prose-h1:text-3xl prose-p:leading-7 prose-code:before:content-none prose-code:after:content-none prose-blockquote:not-italic"
+      className={cn(
+        "relative prose max-w-full dark:prose-invert prose-headings:font-medium prose-headings:tracking-tight prose-h1:font-semibold prose-h1:text-3xl prose-p:leading-7 prose-code:before:content-none prose-code:after:content-none prose-blockquote:not-italic",
+        className
+      )}
       ref={containerRef}
     />
   );

@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import * as path from "path";
 import * as fs from "fs";
 import { type DataStreamWriter } from "ai";
-import { createScopedLogger } from "../terminal/log";
+import { createScopedLogger } from "../log";
 
 const logger = createScopedLogger("Shell");
 
@@ -371,11 +371,12 @@ export async function executeCommandInShell(
   }
 
   const executionId = randomUUID();
+  const startMarker = `__CMD_START_${executionId}__`;
   const endMarker = `__CMD_END_${executionId}__`;
-  const exitMarker = `__EXIT_END_${executionId}__`;
+  const exitMarker = `__EXIT_END_${executionId}__`; // Marker for exit code check
 
-  // Command 1: User command + newline + echo end marker + newline
-  const commandToSend = `${command}\necho "${endMarker}"\n`;
+  // Command 1: Echo start marker, run user command, echo end marker
+  const commandToSend = `echo "${startMarker}"; ${command}; echo "${endMarker}"\n`;
   // Command 2: Echo exit code + newline + echo exit marker + newline
   const exitCommandToSend = `echo $?\necho "${exitMarker}"\n`;
 
@@ -396,6 +397,7 @@ export async function executeCommandInShell(
     let stdoutBuffer = "";
     let stderrBuffer = "";
     let resolved = false;
+    let capturing = false;
 
     const onStdout = (chunk: Buffer) => {
       if (resolved) return;
@@ -408,41 +410,76 @@ export async function executeCommandInShell(
       stdoutBuffer += data;
 
       if (state === "running_command") {
-        const markerIndex = stdoutBuffer.indexOf(endMarker);
-        if (markerIndex !== -1) {
-          commandStdout = stdoutBuffer.substring(0, markerIndex).trim();
-          logger.debug(
-            `${logPrefix} User command End marker found. Final stdout: ${JSON.stringify(
-              commandStdout
-            )}`
-          );
-          stdoutBuffer = stdoutBuffer.substring(markerIndex + endMarker.length);
-
-          state = "waiting_for_exit_code";
-          logger.debug(
-            `${logPrefix} Sending exit code command: ${exitCommandToSend.trim()}`
-          );
-          managedProcess.process.stdin.write(exitCommandToSend, (err) => {
-            if (err) {
-              logger.error(
-                `${logPrefix} Error writing exit command to stdin:`,
-                err
-              );
-              reject(new Error(`Failed to write exit command: ${err.message}`));
-              resolved = true;
-              cleanupListeners();
-            } else {
-              logger.debug(
-                `${logPrefix} Successfully wrote exit code command.`
-              );
-            }
-          });
-        } else {
-          dataStream.writeData({ type: "shell-stdout-delta", content: data });
+        if (!capturing) {
+          // Look for the start marker to begin capturing actual output
+          const startIndex = stdoutBuffer.indexOf(startMarker + "\n"); // Include newline
+          if (startIndex !== -1) {
+            logger.debug(`${logPrefix} Start marker found. Beginning capture.`);
+            capturing = true;
+            // Discard buffer content up to and including the marker line
+            stdoutBuffer = stdoutBuffer.substring(
+              startIndex + startMarker.length + 1
+            );
+            commandStdout = ""; // Reset clean stdout buffer
+          }
         }
+
+        if (capturing) {
+          // Look for the end marker while capturing
+          const markerIndex = stdoutBuffer.indexOf(endMarker);
+          if (markerIndex !== -1) {
+            // Found the end marker!
+            // Append the part before the marker to the clean stdout
+            commandStdout += stdoutBuffer.substring(0, markerIndex);
+            // Clean the final result
+            commandStdout = commandStdout.trim();
+            logger.debug(
+              `${logPrefix} User command End marker found. Final stdout: ${JSON.stringify(
+                commandStdout
+              )}`
+            );
+
+            // Clear buffer up to end marker for next stage
+            stdoutBuffer = stdoutBuffer.substring(
+              markerIndex + endMarker.length
+            );
+            capturing = false; // Stop capturing user output
+
+            // Transition state and send exit command
+            state = "waiting_for_exit_code";
+            logger.debug(
+              `${logPrefix} Sending exit code command: ${exitCommandToSend.trim()}`
+            );
+            managedProcess.process.stdin.write(exitCommandToSend, (err) => {
+              if (err) {
+                logger.error(
+                  `${logPrefix} Error writing exit command to stdin:`,
+                  err
+                );
+                reject(
+                  new Error(`Failed to write exit command: ${err.message}`)
+                );
+                resolved = true;
+                cleanupListeners();
+              } else {
+                logger.debug(
+                  `${logPrefix} Successfully wrote exit code command.`
+                );
+              }
+            });
+          } else {
+            // End marker not found yet, append current buffer chunk to clean output
+            // and stream delta (but only the *new* data from this chunk)
+            commandStdout += data; // Append full chunk for internal tracking
+            dataStream.writeData({ type: "shell-stdout-delta", content: data }); // Stream only new chunk
+          }
+        }
+        // If !capturing and start marker not found yet, do nothing (ignore prompt etc)
       } else if (state === "waiting_for_exit_code") {
+        // Look for the exit code marker
         const exitMarkerIndex = stdoutBuffer.indexOf(exitMarker);
         if (exitMarkerIndex !== -1) {
+          // Found exit marker
           const exitOutput = stdoutBuffer.substring(0, exitMarkerIndex).trim();
           const lines = exitOutput.split("\n");
           const lastLine = lines[lines.length - 1];
@@ -460,6 +497,7 @@ export async function executeCommandInShell(
           resolved = true;
           cleanupListeners();
         }
+        // Waiting for exit marker, don't stream stdout
       }
     };
 
@@ -588,22 +626,34 @@ export async function executeCommandInShell(
       `${logPrefix} Command processing complete for ${executionId}. Final Exit Code: ${exitCode}`
     );
 
+    // Clean up stderr by removing known noise
+    const cleanedStderr = commandStderr
+      .replace(
+        /^bash: cannot set terminal process group \(.*?\): Inappropriate ioctl for device\r?\n/gm,
+        ""
+      )
+      .replace(/^bash: no job control in this shell\r?\n/gm, "")
+      .replace(/^root@sandbox-global:\/mnt\/session#.*?\r?\n/gm, "") // Remove prompts and echoed commands
+      .replace(/\r<.*?\n/gm, "") // Remove echoed markers specifically
+      .trim();
+
+    logger.debug(
+      `${logPrefix} Original stderr: ${JSON.stringify(commandStderr)}`
+    );
+    logger.debug(
+      `${logPrefix} Cleaned stderr: ${JSON.stringify(cleanedStderr)}`
+    );
+
     return {
       stdout: commandStdout,
-      stderr: commandStderr,
+      stderr: cleanedStderr, // Return the cleaned stderr
       exitCode: exitCode,
     };
-  } catch (execError) {
+  } catch (error) {
     logger.error(
-      `${logPrefix} Caught execution error for ${executionId}:`,
-      execError
+      `${logPrefix} Command execution failed for ${executionId}:`,
+      error
     );
-    throw execError;
+    throw error;
   }
-}
-
-// Register cleanup handlers if in a Node.js environment
-if (typeof process !== "undefined") {
-  process.on("SIGTERM", cleanupOnShutdown);
-  process.on("SIGINT", cleanupOnShutdown);
 }

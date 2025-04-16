@@ -240,21 +240,21 @@ export const revisedToolPrompts: Record<ToolName, string> = {
   shellExec: `
 **Tool: \`shellExec\`**
 
-*   **Action:** Executes a single shell command within a secure, isolated sandbox environment (WSL + nsjail). A new sandbox instance is created for each command.
-*   **When to Use:** Useful for running isolated commands like simple scripts, file manipulations within the session directory (\`/mnt/session\`), or non-interactive tools. Suitable for tasks where maintaining shell state (like environment variables or current directory *changes* between tool calls) is **not** required.
-*   **Persistence:** The only persistence between calls is the content of the shared session directory mounted at \`/mnt/session\` inside the sandbox. Shell state (variables, functions, aliases, non-exported environment variables, current directory changes) is **lost** after each execution.
+*   **Action:** Executes a single shell command within a **persistent**, secure, isolated sandbox environment (WSL + nsjail). The same sandbox instance is reused for subsequent commands within the same user session.
+*   **When to Use:** Useful for running sequences of commands where state needs to be maintained (e.g., setting environment variables, changing directories), file manipulations within the session directory (\`/mnt/session\`), or using interactive tools that build on previous steps.
+*   **Persistence:** The sandbox **maintains shell state** (environment variables set with \`export\`, current working directory after \`cd\`, functions, aliases) between different calls to this tool within the same user session. Files created in the shared session directory (\`/mnt/session\`) also persist.
 *   **Input:**
     *   \`command\` (string): The shell command to execute.
-        *   **Quoting Rule:** The command is executed via \`bash -c 'your_command_here'\`. Therefore, **avoid using single quotes (\`'\`)** within the \`command\` string itself, as they will break the wrapping. Use **double quotes (\`"\`)** for string literals inside your command. For example, use \`echo "Hello World"\` instead of \`echo 'Hello World'\`. If single quotes are absolutely necessary, they require complex escaping (e.g., \`echo 'hello'\''world'\`). Prefer double quotes.
+        *   **Quoting Rule:** The command is executed via \`bash -c 'echo "marker"; your_command_here; echo "marker"'\`. Therefore, **avoid using single quotes (\`'\`)** within the \`command\` string itself, as they will break the wrapping. Use **double quotes (\`"\`)** for string literals inside your command. For example, use \`echo "Hello World"\` instead of \`echo 'Hello World'\`. If single quotes are absolutely necessary, they require complex escaping (e.g., \`echo 'hello'\''world'\`). Prefer double quotes.
 *   **Output:** An object containing:
-    *   \`stdout\` (string): The standard output captured from the command.
-    *   \`stderr\` (string): The standard error captured from the command.
+    *   \`stdout\` (string): The standard output captured from the command (cleaned of shell noise).
+    *   \`stderr\` (string): The standard error captured from the command (cleaned of shell noise).
     *   \`exitCode\` (number | null): The exit code of the executed command (0 for success, non-zero for errors, \`null\` if undetermined).
 *   **Workflow:**
     1.  Provide the command string, following the quoting rules.
-    2.  The tool executes the command in a fresh sandbox.
-    3.  Analyze the \`stdout\`, \`stderr\`, and \`exitCode\` in the result to determine the outcome and report back to the user.
-*   **Security:** Commands run in a heavily restricted sandbox with network access disabled and limited filesystem visibility (primarily \`/mnt/session\`). Resource limits (CPU, memory, file size) may be applied.
+    2.  The tool executes the command in the persistent sandbox.
+    3.  Analyze the \`stdout\`, \`stderr\`, and \`exitCode\` in the result to determine the outcome and report back to the user or plan the next command.
+*   **Security:** Commands run in a heavily restricted sandbox with network access disabled and limited filesystem visibility (primarily \`/mnt/session\`). Resource limits (CPU, memory, file size) may be applied (though currently disabled).
 `,
 };
 

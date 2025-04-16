@@ -34,7 +34,10 @@ export type DataStreamDelta = {
     | "python-stdout-delta"
     | "python-stderr-delta"
     | "python-execution-end"
-    | "python-error";
+    | "python-error"
+    // Add shell execution delta types
+    | "shell-stdout-delta"
+    | "shell-stderr-delta";
   content: string | any;
 };
 

@@ -41,6 +41,8 @@ import {
   MoreHorizontal,
   MessageSquare,
   ChevronRight,
+  Eye,
+  Code,
 } from "lucide-react";
 import {
   Tooltip,
@@ -56,6 +58,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "./ui/skeleton";
+import { DataStreamHandler } from "./data-stream-handler";
 
 export const artifactDefinitions = [
   textArtifact,
@@ -345,208 +348,216 @@ function PureArtifact({
   };
 
   return (
-    <AnimatePresence>
-      {artifact.isVisible && artifact.documentId !== "init" && (
-        <motion.div
-          data-testid="artifact"
-          className={cn(
-            "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm",
-            "p-0"
-          )}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.15 } }}
-        >
+    <>
+      <AnimatePresence>
+        {artifact.isVisible && artifact.documentId !== "init" && (
           <motion.div
+            key={artifact.documentId || "artifact-panel"}
+            data-testid="artifact"
             className={cn(
-              "flex flex-col h-full w-full rounded-lg border shadow-lg bg-background overflow-hidden",
-              "rounded-none border-0"
+              "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm",
+              "p-0"
             )}
-            initial={{ scale: 0.98, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.98, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.15 } }}
           >
-            <div className="flex items-center justify-between p-2 md:px-4 border-b bg-muted/30 shrink-0">
-              <div className="flex items-center gap-2 md:gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={handleClose}
-                >
-                  <X className="size-4" />
-                  <span className="sr-only">Close</span>
-                </Button>
-
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className="h-6 px-2 gap-1 text-xs font-normal shrink-0"
+            <motion.div
+              className={cn(
+                "flex flex-col h-full w-full rounded-lg border shadow-lg bg-background overflow-hidden",
+                "rounded-none border-0"
+              )}
+              initial={{ scale: 0.98, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.98, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="flex items-center justify-between p-2 md:px-4 border-b bg-muted/30 shrink-0">
+                <div className="flex items-center gap-2 md:gap-3">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={handleClose}
                   >
-                    <IconComponent className="size-4" />
-                    {artifact.kind.charAt(0).toUpperCase() +
-                      artifact.kind.slice(1)}
-                  </Badge>
-                  <h2 className="text-sm font-medium truncate max-w-[150px] sm:max-w-[200px] md:max-w-xs lg:max-w-md">
-                    {artifact.title || "Untitled"}
-                  </h2>
+                    <X className="size-4" />
+                    <span className="sr-only">Close</span>
+                  </Button>
+
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="h-6 px-2 gap-1 text-xs font-normal shrink-0"
+                    >
+                      <IconComponent className="size-4" />
+                      {artifact.kind.charAt(0).toUpperCase() +
+                        artifact.kind.slice(1)}
+                    </Badge>
+                    <h2 className="text-sm font-medium truncate max-w-[150px] sm:max-w-[200px] md:max-w-xs lg:max-w-md">
+                      {artifact.title || "Untitled"}
+                    </h2>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 md:gap-1.5">
+                  {!isMobile && (
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => setShowChat(!showChat)}
+                          >
+                            <MessageSquare className="size-4" />
+                            <span className="sr-only">
+                              {showChat ? "Hide Chat" : "Show Chat"}
+                            </span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {showChat ? "Hide Chat" : "Show Chat"}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-8">
+                        <MoreHorizontal className="size-4" />
+                        <span className="sr-only">More options</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        disabled
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="size-4" />
+                        <span>Download</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled
+                        className="flex items-center gap-2"
+                      >
+                        <Share2 className="size-4" />
+                        <span>Share</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 md:gap-1.5">
-                {!isMobile && (
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
-                          onClick={() => setShowChat(!showChat)}
-                        >
-                          <MessageSquare className="size-4" />
-                          <span className="sr-only">
-                            {showChat ? "Hide Chat" : "Show Chat"}
-                          </span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {showChat ? "Hide Chat" : "Show Chat"}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+              <div className="flex-1 flex overflow-hidden">
+                {!isMobile && showChat ? (
+                  <ResizablePanelGroup
+                    direction="horizontal"
+                    className="w-full"
+                  >
+                    <ResizablePanel defaultSize={30} minSize={25} maxSize={50}>
+                      <div className="flex flex-col h-full border-r bg-muted/20">
+                        <div className="p-3 border-b bg-muted/30 flex items-center justify-between shrink-0">
+                          <h3 className="text-sm font-medium">Chat</h3>
+                          {status === "streaming" && (
+                            <Badge
+                              variant="outline"
+                              className="h-6 text-xs px-1.5 animate-pulse"
+                            >
+                              Typing...
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-3">
+                          <ArtifactMessages
+                            chatId={chatId}
+                            isLoading={status === "streaming"}
+                            messages={messages}
+                            setMessages={setMessages}
+                            reload={reload}
+                            artifactStatus={artifact.status}
+                          />
+                        </div>
+
+                        <div className="p-3 border-t bg-muted/30 shrink-0">
+                          <MultimodalInput
+                            append={append}
+                            searchMode="agent"
+                            setSearchMode={() => {}}
+                            chatId={chatId}
+                            input={input}
+                            setInput={setInput}
+                            handleSubmit={(e, opts) => {
+                              handleSubmit(e, opts);
+                              return Promise.resolve();
+                            }}
+                            isLoading={status === "streaming"}
+                            stop={stop}
+                            attachments={attachments}
+                            setAttachments={setAttachments}
+                            messages={messages}
+                            className="bg-background"
+                            setMessages={setMessages}
+                          />
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    <ResizableHandle withHandle />
+                    <ResizablePanel defaultSize={70}>
+                      <ArtifactContent
+                        artifact={artifact}
+                        setMode={setMode}
+                        artifactDefinition={artifactDefinition}
+                        isContentDirty={isContentDirty}
+                        document={document}
+                        currentVersionIndex={currentVersionIndex}
+                        isCurrentVersion={isCurrentVersion}
+                        mode={mode}
+                        metadata={metadata}
+                        setMetadata={setMetadata}
+                        getDocumentContentByIndex={getDocumentContentByIndex}
+                        isDocumentsFetching={isDocumentsFetching}
+                        saveContent={saveContent}
+                        documents={documents}
+                        handleVersionChange={handleVersionChange}
+                        appendMessage={append}
+                        setMessages={setMessages}
+                        setArtifact={setArtifact}
+                      />
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                ) : (
+                  <ArtifactContent
+                    artifact={artifact}
+                    setMode={setMode}
+                    artifactDefinition={artifactDefinition}
+                    isContentDirty={isContentDirty}
+                    document={document}
+                    currentVersionIndex={currentVersionIndex}
+                    isCurrentVersion={isCurrentVersion}
+                    mode={mode}
+                    metadata={metadata}
+                    setMetadata={setMetadata}
+                    getDocumentContentByIndex={getDocumentContentByIndex}
+                    isDocumentsFetching={isDocumentsFetching}
+                    saveContent={saveContent}
+                    documents={documents}
+                    handleVersionChange={handleVersionChange}
+                    appendMessage={append}
+                    setMessages={setMessages}
+                    setArtifact={setArtifact}
+                  />
                 )}
-
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="size-8">
-                      <MoreHorizontal className="size-4" />
-                      <span className="sr-only">More options</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      disabled
-                      className="flex items-center gap-2"
-                    >
-                      <Download className="size-4" />
-                      <span>Download</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled
-                      className="flex items-center gap-2"
-                    >
-                      <Share2 className="size-4" />
-                      <span>Share</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
-            </div>
-
-            <div className="flex-1 flex overflow-hidden">
-              {!isMobile && showChat ? (
-                <ResizablePanelGroup direction="horizontal" className="w-full">
-                  <ResizablePanel defaultSize={30} minSize={25} maxSize={50}>
-                    <div className="flex flex-col h-full border-r bg-muted/20">
-                      <div className="p-3 border-b bg-muted/30 flex items-center justify-between shrink-0">
-                        <h3 className="text-sm font-medium">Chat</h3>
-                        {status === "streaming" && (
-                          <Badge
-                            variant="outline"
-                            className="h-6 text-xs px-1.5 animate-pulse"
-                          >
-                            Typing...
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex-1 overflow-y-auto p-3">
-                        <ArtifactMessages
-                          chatId={chatId}
-                          isLoading={status === "streaming"}
-                          messages={messages}
-                          setMessages={setMessages}
-                          reload={reload}
-                          artifactStatus={artifact.status}
-                        />
-                      </div>
-
-                      <div className="p-3 border-t bg-muted/30 shrink-0">
-                        <MultimodalInput
-                          append={append}
-                          searchMode="agent"
-                          setSearchMode={() => {}}
-                          chatId={chatId}
-                          input={input}
-                          setInput={setInput}
-                          handleSubmit={(e, opts) => {
-                            handleSubmit(e, opts);
-                            return Promise.resolve();
-                          }}
-                          isLoading={status === "streaming"}
-                          stop={stop}
-                          attachments={attachments}
-                          setAttachments={setAttachments}
-                          messages={messages}
-                          className="bg-background"
-                          setMessages={setMessages}
-                        />
-                      </div>
-                    </div>
-                  </ResizablePanel>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel defaultSize={70}>
-                    <ArtifactContent
-                      artifact={artifact}
-                      setMode={setMode}
-                      artifactDefinition={artifactDefinition}
-                      isContentDirty={isContentDirty}
-                      document={document}
-                      currentVersionIndex={currentVersionIndex}
-                      isCurrentVersion={isCurrentVersion}
-                      mode={mode}
-                      metadata={metadata}
-                      setMetadata={setMetadata}
-                      getDocumentContentByIndex={getDocumentContentByIndex}
-                      isDocumentsFetching={isDocumentsFetching}
-                      saveContent={saveContent}
-                      documents={documents}
-                      handleVersionChange={handleVersionChange}
-                      appendMessage={append}
-                      setMessages={setMessages}
-                      setArtifact={setArtifact}
-                    />
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              ) : (
-                <ArtifactContent
-                  artifact={artifact}
-                  setMode={setMode}
-                  artifactDefinition={artifactDefinition}
-                  isContentDirty={isContentDirty}
-                  document={document}
-                  currentVersionIndex={currentVersionIndex}
-                  isCurrentVersion={isCurrentVersion}
-                  mode={mode}
-                  metadata={metadata}
-                  setMetadata={setMetadata}
-                  getDocumentContentByIndex={getDocumentContentByIndex}
-                  isDocumentsFetching={isDocumentsFetching}
-                  saveContent={saveContent}
-                  documents={documents}
-                  handleVersionChange={handleVersionChange}
-                  appendMessage={append}
-                  setMessages={setMessages}
-                  setArtifact={setArtifact}
-                />
-              )}
-            </div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
+
+      <DataStreamHandler id={chatId} />
+    </>
   );
 }
 
@@ -644,26 +655,28 @@ function ArtifactContent({
               </Button>
             )}
 
-          {artifact.kind === "code" && (
+          {artifact.kind === "html" && (
             <Tabs
               value={metadata?.viewMode || "code"}
               onValueChange={(value) =>
                 setMetadata((prev) => ({ ...prev, viewMode: value }))
               }
-              className="h-8"
+              className="h-8 flex items-center gap-2"
             >
-              <TabsList className="h-7 p-0.5">
-                <TabsTrigger
-                  value="code"
-                  className="text-xs px-2 h-6 data-[state=active]:bg-background"
-                >
-                  Code
-                </TabsTrigger>
+              <TabsList className="h-9">
                 <TabsTrigger
                   value="preview"
-                  className="text-xs px-2 h-6 data-[state=active]:bg-background"
+                  className="flex items-center gap-1.5 text-xs px-2"
                 >
+                  <Eye className="size-3.5" />
                   Preview
+                </TabsTrigger>
+                <TabsTrigger
+                  value="code"
+                  className="flex items-center gap-1.5 text-xs px-2"
+                >
+                  <Code className="size-3.5" />
+                  Code Editor
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -755,7 +768,9 @@ function ArtifactContent({
                 mode={mode}
                 status={artifact.status}
                 currentVersionIndex={currentVersionIndex}
-                onSaveContent={(newContent) => saveContent(newContent, true)}
+                onSaveContent={(newContent: string) =>
+                  saveContent(newContent, true)
+                }
                 isInline={false}
                 isCurrentVersion={isCurrentVersion}
                 getDocumentContentById={(index: number) =>
