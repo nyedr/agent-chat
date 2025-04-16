@@ -11,7 +11,7 @@ import { motion } from "framer-motion";
 import { DeepResearchResult } from "./tools/deep-research-result";
 import { calculateProgressPercentage, formatTime } from "@/lib/utils";
 import fastDeepEqual from "fast-deep-equal";
-import { PythonInterpreter } from "./tools/python-interpreter";
+import { PythonInterpreter } from "./tools/python-interpreter-result";
 import { ToolName, ToolReturnTypes } from "@/lib/ai/tools";
 import { ExtractStructuredDataResult } from "./tools/extract-structured-data-result";
 import { ListDirectoryResult } from "./tools/list-directory-result";

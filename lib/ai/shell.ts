@@ -6,34 +6,28 @@ import * as fs from "fs";
 import { type DataStreamWriter } from "ai";
 import { createScopedLogger } from "../terminal/log";
 
-// TODO: Replace with your actual logging implementation
 const logger = createScopedLogger("Shell");
 
 export interface ShellExecResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
-  // Optional: Include observed CWD if tracked
-  // finalCwd?: string | null;
 }
 
 // --- Constants ---
-const BASE_SESSION_DIR_HOST = path.resolve("./wsl_sessions/global_shell"); // Single directory for the global process
-const BASE_SESSION_DIR_WSL = "/mnt/session"; // Mount point inside sandbox
+const BASE_SESSION_DIR_HOST = path.resolve("./wsl_sessions/global_shell");
+const BASE_SESSION_DIR_WSL = "/mnt/session";
 const NSJAIL_PATH_WSL = "/usr/local/bin/nsjail";
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // Keep idle timeout for the single process
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 // Helper function to convert Windows path to WSL path
 function windowsPathToWslPath(winPath: string): string | null {
-  // Match drive letter and rest of path, converting backslashes
   const driveMatch = winPath.match(/^([a-zA-Z]):\\?/);
   if (!driveMatch) {
     logger.warn(
       `[ShellManager] Path does not seem to be a Windows drive path: ${winPath}`
     );
-    // Assume it might already be a Linux-style path or handle differently?
-    // For now, return null to indicate conversion failure for standard C:\ format.
     return null;
   }
   const driveLetter = driveMatch[1].toLowerCase();
@@ -54,12 +48,12 @@ interface ManagedProcess {
   lastActivityTime: number;
 }
 
-// Single global variable to hold the process reference
 let globalManagedProcess: ManagedProcess | null = null;
 let idleCheckInterval: NodeJS.Timeout | null = null;
 
 /**
  * Gets the existing global sandboxed shell process or creates a new one if needed.
+ * Ensures only one persistent process runs at a time.
  */
 async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
   const now = Date.now();
@@ -69,18 +63,18 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
       !globalManagedProcess.process.killed
     ) {
       logger.log(`[ShellManager] Reusing global sandboxed process.`);
-      globalManagedProcess.lastActivityTime = now; // Update activity time
+      globalManagedProcess.lastActivityTime = now;
       return globalManagedProcess;
     }
     logger.warn(
       `[ShellManager] Global sandboxed process existed but was dead. Cleaning up.`
     );
-    globalManagedProcess = null; // Clear the dead process reference
+    globalManagedProcess = null;
   }
 
   logger.log(`[ShellManager] Creating new global sandboxed process.`);
 
-  // --- Prepare Session Directory (Single Global) ---
+  // Prepare Session Directory
   try {
     if (!fs.existsSync(BASE_SESSION_DIR_HOST)) {
       fs.mkdirSync(BASE_SESSION_DIR_HOST, { recursive: true });
@@ -100,12 +94,9 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
     );
   }
 
-  // --- Construct nsjail Command (Global Instance) ---
-
   // Convert the host session directory path to its WSL equivalent for the bind mount
   const wslBindSourcePath = windowsPathToWslPath(BASE_SESSION_DIR_HOST);
   if (!wslBindSourcePath) {
-    // Handle error: could not convert the path
     throw new Error(
       `[ShellManager] Failed to convert host session directory ${BASE_SESSION_DIR_HOST} to a WSL path for bind mount.`
     );
@@ -118,13 +109,13 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
   const nsjailArgs = [
     "sudo", // Execute nsjail with sudo inside WSL
     NSJAIL_PATH_WSL,
-    // "-v", // Remove verbose for now
+    // "-v", // Verbose flag (disabled for now)
     "--hostname",
     `sandbox-global`,
     "--chroot",
-    "/", // Use the actual root filesystem of the WSL instance
+    "/",
     "-Q", // Keep quiet unless errors
-    // Mounts (Bind standard directories read-only into the jail)
+    // Mounts
     "-R",
     "/bin",
     "-R",
@@ -136,23 +127,21 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
     "-R",
     "/usr/lib",
     `-B`,
-    `${wslBindSourcePath}:${BASE_SESSION_DIR_WSL}`, // Use the converted WSL path
+    `${wslBindSourcePath}:${BASE_SESSION_DIR_WSL}`,
     "-m",
-    `none:/tmp:tmpfs:size=67108864`,
+    `none:/tmp:tmpfs:size=67108864`, // Use correct tmpfs syntax
     "--cwd",
-    BASE_SESSION_DIR_WSL, // Start in the mounted global dir
-    // Disable Resource Limits again for testing
-    // "--rlimit_cpu",
-    // "60",
-    // "--rlimit_as",
-    // "512",
-    // "--rlimit_nofile",
-    // "128",
-    // "--rlimit_fsize",
-    // "100",
+    BASE_SESSION_DIR_WSL,
+    // Resource Limits (currently disabled)
+    // "--rlimit_cpu", "60",
+    // "--rlimit_as", "512",
+    // "--rlimit_nofile", "128",
+    // "--rlimit_fsize", "100",
     "-N", // Keep network disabled for now
     "--",
     "/bin/bash",
+    "-i", // Keep interactive
+    "-s", // Read commands from stdin, keeps shell alive
   ];
 
   logger.debug(
@@ -181,7 +170,7 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
       lastActivityTime: now,
     };
 
-    // --- Process Lifecycle Handlers ---
+    // Process Lifecycle Handlers
     process.on("error", (err) => {
       logger.error(`[ShellManager Global] Process spawn error:`, err);
       managedProcess.stdout.end();
@@ -190,13 +179,29 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
     });
     process.on("exit", (code, signal) => {
       logger.log(
-        `[ShellManager Global] Process exited (code: ${code}, signal: ${signal})`
+        `[ShellManager Global] Persistent process exited (code: ${code}, signal: ${signal})`
       );
       managedProcess.stdout.end();
       managedProcess.stderr.end();
-      if (globalManagedProcess === managedProcess) globalManagedProcess = null;
+      // Only clear the global reference if the exit was abnormal or via expected methods
+      if (code !== 0 || signal !== null) {
+        logger.warn(
+          `[ShellManager Global] Abnormal exit detected. Clearing global reference.`
+        );
+        if (globalManagedProcess === managedProcess) {
+          globalManagedProcess = null;
+          stopIdleCheckInterval();
+        }
+      } else {
+        logger.log(
+          `[ShellManager Global] Normal exit (code 0), potentially idle timeout or manual termination.`
+        );
+        if (globalManagedProcess === managedProcess) {
+          globalManagedProcess = null;
+          stopIdleCheckInterval();
+        }
+      }
     });
-    // --- End Lifecycle Handlers ---
 
     await new Promise((resolve) => setTimeout(resolve, 500)); // Allow time for potential early exit
 
@@ -218,7 +223,6 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
       error
     );
     globalManagedProcess = null;
-    // Consider directory cleanup policy here
     throw new Error(
       `Failed to spawn global sandboxed shell process. ${
         error instanceof Error ? error.message : ""
@@ -228,13 +232,12 @@ async function getOrCreateGlobalProcess(): Promise<ManagedProcess> {
 }
 
 /**
- * Terminates the global shell process forcefully, if it exists.
+ * Terminates the global shell process forcefully.
  */
 function terminateGlobalShellProcess(): boolean {
   if (globalManagedProcess) {
     logger.log(`[ShellManager] Terminating global process.`);
     globalManagedProcess.process.kill("SIGKILL");
-    // The 'exit' handler will set globalManagedProcess to null
     return true;
   }
   return false;
@@ -259,7 +262,7 @@ function checkIdleProcess() {
       )}s. Terminating.`
     );
     terminateGlobalShellProcess();
-    stopIdleCheckInterval(); // Stop checking once terminated
+    stopIdleCheckInterval();
   }
 }
 
@@ -277,14 +280,13 @@ function startIdleCheckInterval() {
       }s). Timeout: ${IDLE_TIMEOUT_MS / 1000}s.`
     );
 
-    // Ensure interval is cleared on process exit
     const cleanupInterval = () => {
       if (idleCheckInterval) {
         clearInterval(idleCheckInterval);
         idleCheckInterval = null;
       }
     };
-    process.off("beforeExit", cleanupInterval); // Remove old listener if exists
+    process.off("beforeExit", cleanupInterval);
     process.on("beforeExit", cleanupInterval);
   }
 }
@@ -315,13 +317,12 @@ export async function resetGlobalShellProcess(
   }
   if (startNew) {
     try {
-      await getOrCreateGlobalProcess(); // Start a fresh one
+      await getOrCreateGlobalProcess();
     } catch (error) {
       logger.error(
         "[ShellManager] Failed to start new process after reset:",
         error
       );
-      // Consider re-throwing or handling differently
     }
   }
 }
@@ -335,7 +336,6 @@ export function cleanupOnShutdown() {
   );
   stopIdleCheckInterval();
   terminateGlobalShellProcess();
-  // Consider directory cleanup policy here
   logger.log("[ShellManager] Global process cleanup complete.");
 }
 
@@ -343,14 +343,12 @@ export function cleanupOnShutdown() {
 
 /**
  * Executes a command in the managed global shell process.
- * Handles process acquisition, command wrapping, stream piping,
- * exit code parsing, and CWD observation.
  * Streams stdout/stderr deltas via the provided DataStreamWriter.
  */
 export async function executeCommandInShell(
   command: string,
   dataStream: DataStreamWriter,
-  chatId?: string // For logging context
+  chatId?: string
 ): Promise<ShellExecResult> {
   const logPrefix = chatId
     ? `[ShellManager Chat:${chatId}]`
@@ -369,206 +367,230 @@ export async function executeCommandInShell(
     );
     const errorMessage =
       procError instanceof Error ? procError.message : String(procError);
-    // Don't use dataStream here, let the caller (tool) handle tool-specific errors
     throw new Error(`Process Initialization Failed: ${errorMessage}`);
   }
 
   const executionId = randomUUID();
+  const endMarker = `__CMD_END_${executionId}__`;
+  const exitMarker = `__EXIT_END_${executionId}__`;
 
-  // --- TODO: CWD Management (using chatId for state lookup) ---
-  // let commandToRun = command; // Default
-  // const targetCwd = await getStoredCwd(chatId); // Implement persistence
-  // if (targetCwd && targetCwd !== managedProcess.sessionWslDir /* Check if already there */) {
-  //   const sanitizedCwd = sanitizePathForShell(targetCwd); // Implement robust sanitization
-  //   if (sanitizedCwd) {
-  //     commandToRun = `cd "${sanitizedCwd}" && ${command}`;
-  //     logger.debug(`${logPrefix} Prepended cd to: ${sanitizedCwd}`);
-  //   } else {
-  //     logger.warn(`${logPrefix} Invalid target CWD skipped: ${targetCwd}`);
-  //   }
-  // }
-  const commandToRun = command; // Using base command for now
-  // --- End CWD TODO ---
-
-  const startMarker = `__CMD_START_${executionId}__`;
-  const commandToSend = `bash -c 'echo "${startMarker}"; ${commandToRun}'\n`;
+  // Command 1: User command + newline + echo end marker + newline
+  const commandToSend = `${command}\necho "${endMarker}"\n`;
+  // Command 2: Echo exit code + newline + echo exit marker + newline
+  const exitCommandToSend = `echo $?\necho "${exitMarker}"\n`;
 
   logger.debug(
-    `${logPrefix} Constructed command to send (executionId: ${executionId}):\n${commandToSend}`
+    `${logPrefix} Constructed commands (executionId: ${executionId}):\nCMD1: ${commandToSend.trim()}\nCMD2: ${exitCommandToSend.trim()}`
   );
 
   let commandStdout = "";
   let commandStderr = "";
   let exitCode: number | null = null;
-  let finalPwdOutput: string | null = null;
-  let capturing = false;
-  let actualExitCode: number | null = null; // Variable to store the real exit code
+  let actualExitCode: number | null = null; // Store exit code from marker
+  let state: "running_command" | "waiting_for_exit_code" = "running_command";
 
-  // Declare timeout and cleanup in the outer scope
   let timeoutHandle: NodeJS.Timeout | null = null;
-  let cleanupListeners = () => {}; // Placeholder
+  let cleanupListeners = () => {};
 
   const outputPromise = new Promise<void>((resolve, reject) => {
     let stdoutBuffer = "";
-    let stderrBuffer = ""; // Buffer stderr locally too
+    let stderrBuffer = "";
+    let resolved = false;
 
     const onStdout = (chunk: Buffer) => {
+      if (resolved) return;
       const data = chunk.toString();
       logger.debug(
-        `${logPrefix} Received stdout chunk (executionId: ${executionId}, capturing: ${capturing}): ${JSON.stringify(
+        `${logPrefix} Received stdout chunk (State: ${state}): ${JSON.stringify(
           data
         )}`
       );
-      // Always accumulate raw buffer
       stdoutBuffer += data;
 
-      if (capturing) {
-        // If already capturing, just append the new data to the clean stdout
-        commandStdout += data;
-        dataStream.writeData({ type: "shell-stdout-delta", content: data });
-      } else if (stdoutBuffer.includes(startMarker)) {
-        // Found marker for the first time
-        capturing = true;
-        // Find the index AFTER the start marker
-        const markerEndIndex =
-          stdoutBuffer.indexOf(startMarker) + startMarker.length;
-        // Extract everything after the marker from the current buffer
-        const initialContent = stdoutBuffer.substring(markerEndIndex);
-        commandStdout = initialContent; // Initialize clean stdout
-        if (initialContent) {
-          // Only stream if there's content after marker in this chunk
-          dataStream.writeData({
-            type: "shell-stdout-delta",
-            content: initialContent,
+      if (state === "running_command") {
+        const markerIndex = stdoutBuffer.indexOf(endMarker);
+        if (markerIndex !== -1) {
+          commandStdout = stdoutBuffer.substring(0, markerIndex).trim();
+          logger.debug(
+            `${logPrefix} User command End marker found. Final stdout: ${JSON.stringify(
+              commandStdout
+            )}`
+          );
+          stdoutBuffer = stdoutBuffer.substring(markerIndex + endMarker.length);
+
+          state = "waiting_for_exit_code";
+          logger.debug(
+            `${logPrefix} Sending exit code command: ${exitCommandToSend.trim()}`
+          );
+          managedProcess.process.stdin.write(exitCommandToSend, (err) => {
+            if (err) {
+              logger.error(
+                `${logPrefix} Error writing exit command to stdin:`,
+                err
+              );
+              reject(new Error(`Failed to write exit command: ${err.message}`));
+              resolved = true;
+              cleanupListeners();
+            } else {
+              logger.debug(
+                `${logPrefix} Successfully wrote exit code command.`
+              );
+            }
           });
+        } else {
+          dataStream.writeData({ type: "shell-stdout-delta", content: data });
+        }
+      } else if (state === "waiting_for_exit_code") {
+        const exitMarkerIndex = stdoutBuffer.indexOf(exitMarker);
+        if (exitMarkerIndex !== -1) {
+          const exitOutput = stdoutBuffer.substring(0, exitMarkerIndex).trim();
+          const lines = exitOutput.split("\n");
+          const lastLine = lines[lines.length - 1];
+          const exitCodeMatch = lastLine.match(/^(\d+)$/);
+          if (exitCodeMatch) {
+            actualExitCode = parseInt(exitCodeMatch[1], 10);
+            logger.debug(`${logPrefix} Parsed exit code: ${actualExitCode}`);
+          } else {
+            logger.warn(
+              `${logPrefix} Could not parse exit code from output: ${exitOutput}`
+            );
+            actualExitCode = null;
+          }
+          resolve();
+          resolved = true;
+          cleanupListeners();
         }
       }
-      // We no longer look for end marker here
     };
 
     const onStderr = (chunk: Buffer) => {
+      // Always buffer stderr for the final result, and stream deltas
       const data = chunk.toString();
-      stderrBuffer += data; // Buffer all stderr
-      if (capturing) {
-        commandStderr += data; // Also accumulate for final result
-        // Stream delta to the tool's dataStream
-        dataStream.writeData({ type: "shell-stderr-delta", content: data });
-      }
+      logger.debug(
+        `${logPrefix} Received stderr chunk: ${JSON.stringify(data)}`
+      );
+      commandStderr += data;
+      dataStream.writeData({ type: "shell-stderr-delta", content: data });
     };
 
-    // Assign the actual cleanup logic to the outer variable
     cleanupListeners = () => {
       managedProcess.stdout.removeListener("data", onStdout);
       managedProcess.stderr.removeListener("data", onStderr);
       managedProcess.stdout.removeListener("error", onError);
       managedProcess.stderr.removeListener("error", onError);
-      managedProcess.process.removeListener("exit", onExit); // Remove exit listener
+      managedProcess.stdout.removeListener("close", onClose);
+      managedProcess.stderr.removeListener("close", onClose);
       logger.debug(
         `${logPrefix} Listeners cleaned up for execution ${executionId}.`
       );
     };
 
     const onError = (err: Error) => {
+      if (resolved) return;
       logger.error(
         `${logPrefix} Process stream error during command ${executionId}:`,
         err
       );
-      cleanupListeners(); // Call outer cleanup
-      reject(err); // Reject the promise on stream error
+      cleanupListeners();
+      reject(err);
+      resolved = true;
     };
 
-    // Listener for the actual process exit event
-    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      logger.log(
-        `${logPrefix} Process exited (executionId: ${executionId}). Code: ${code}, Signal: ${signal}`
+    const onClose = () => {
+      if (resolved) return;
+      logger.warn(
+        `${logPrefix} Process streams closed unexpectedly during command ${executionId} (State: ${state}). The persistent shell might have died.`
       );
-      actualExitCode = code;
-      // Trim whitespace/newlines from the captured stdout *after* process exit
-      commandStdout = commandStdout.trim();
-      // Removed logic checking for startMarker or trailing newline specifically
-      resolve(); // Resolve the promise now that the process has truly exited
+      cleanupListeners();
+      // Don't resolve here, let the process exit handler or timeout handle final state
+      // unless we want to signal this specific error?
+      // For now, we assume the main process exit handler will catch the death.
     };
 
-    // Attach listeners
     managedProcess.stdout.on("data", onStdout);
     managedProcess.stderr.on("data", onStderr);
     managedProcess.stdout.once("error", onError);
     managedProcess.stderr.once("error", onError);
-    managedProcess.process.once("exit", onExit); // Listen for process exit
+    managedProcess.stdout.once("close", onClose);
+    managedProcess.stderr.once("close", onClose);
 
     logger.debug(
       `${logPrefix} Listeners attached for execution ${executionId}`
     );
 
-    const executionTimeoutMillis = 60000; // TODO: Make configurable?
-    // Assign the timeout handle to the outer variable
+    const executionTimeoutMillis = 60000;
     timeoutHandle = setTimeout(() => {
       logger.warn(
         `${logPrefix} Command execution timeout (${executionTimeoutMillis}ms) reached for ${executionId}.`
       );
-      cleanupListeners(); // Call cleanup function from the outer scope
-      if (exitCode === null) exitCode = -2; // Specific timeout exit code
-      resolve(); // Resolve on timeout
+      if (!resolved) {
+        cleanupListeners();
+        exitCode = -2;
+        commandStdout = stdoutBuffer.trim();
+        logger.warn(
+          `${logPrefix} Timeout occurred. State: ${state}. Captured stdout: ${JSON.stringify(
+            commandStdout
+          )}`
+        );
+        resolve();
+        resolved = true;
+      }
     }, executionTimeoutMillis);
 
-    // Write the command to the process stdin
     logger.debug(
       `${logPrefix} Attempting to write command to stdin for ${executionId}`
     );
     managedProcess.process.stdin.write(commandToSend, (err) => {
       if (err) {
         logger.error(
-          `${logPrefix} Error writing to stdin for ${executionId}:`,
+          `${logPrefix} Error writing command to stdin for ${executionId}:`,
           err
         );
         cleanupListeners();
         if (timeoutHandle) clearTimeout(timeoutHandle);
         reject(new Error(`Failed to write command: ${err.message}`));
+        resolved = true;
       } else {
         logger.debug(
           `${logPrefix} Successfully wrote command to stdin for ${executionId}`
         );
-        // Explicitly close stdin to signal end of input
-        managedProcess.process.stdin.end();
-        logger.debug(`${logPrefix} Closed stdin for ${executionId}`); // Added log
+        // DO NOT close stdin for persistent shell
       }
     });
-  }); // End outputPromise
+  });
 
   // Ensure cleanup happens when the promise settles (resolves or rejects)
-  outputPromise.finally(() => {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle); // Clear timeout using the handle from the outer scope
+  let cleanedUp = false;
+  const finalCleanup = () => {
+    if (!cleanedUp) {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      cleanupListeners();
+      cleanedUp = true;
     }
-    cleanupListeners(); // Call cleanup function from the outer scope
-  });
+  };
+  outputPromise.finally(finalCleanup);
 
   try {
     await outputPromise;
 
-    // --- TODO: CWD/Log Persistence ---
-    if (chatId && finalPwdOutput) {
-      // await storeCwd(chatId, finalPwdOutput); // Implement persistence
-      logger.debug(`${logPrefix} Observed CWD: ${finalPwdOutput}`);
-    }
-    // Logging the command outcome might be better handled by the caller (tool)
-    // --- End CWD/Log TODO ---
+    // --- TODO: CWD Management ---
+    // Current working directory handling could be added here if needed
+    // by parsing the `pwd` output included before the end marker.
 
-    // Update activity time AFTER command finishes
     if (globalManagedProcess) {
       globalManagedProcess.lastActivityTime = Date.now();
     }
 
-    // Use the actualExitCode captured from the 'exit' event
     exitCode = actualExitCode;
     logger.log(
       `${logPrefix} Command processing complete for ${executionId}. Final Exit Code: ${exitCode}`
     );
 
-    // Return the structured result
     return {
-      stdout: commandStdout, // Return accumulated stdout
-      stderr: commandStderr, // Return the fully captured stderr
+      stdout: commandStdout,
+      stderr: commandStderr,
       exitCode: exitCode,
     };
   } catch (execError) {
@@ -576,8 +598,6 @@ export async function executeCommandInShell(
       `${logPrefix} Caught execution error for ${executionId}:`,
       execError
     );
-    // Re-throw the error so the caller (tool) can handle it appropriately
-    // (e.g., send a tool-error message via dataStream)
     throw execError;
   }
 }

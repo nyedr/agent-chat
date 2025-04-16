@@ -81,7 +81,7 @@ const PythonInterpreterDisplay = ({
             </div>
           </AccordionTrigger>
           <AccordionContent className="p-0">
-            <CodeBlock language="python" result={resultText}>
+            <CodeBlock useMinimal={true} language="python" result={resultText}>
               {args.code}
             </CodeBlock>
           </AccordionContent>
