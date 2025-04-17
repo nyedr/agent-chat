@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ModelsByCapability, myProvider } from "../ai/models";
 
 import { ResearchOrchestrator, ResearchResult } from "./research-orchestrator";
-import { WorkflowConfig, ResearchOptions } from "./types";
+import { WorkflowConfig, ResearchOptions, ResearchLogEntry } from "./types";
 
 /**
  * Props for creating a deep research tool
@@ -25,8 +25,13 @@ export interface DeepResearchToolResult {
     metrics?: ResearchResult["metrics"];
     completedSteps: number;
     totalSteps: number;
+    logs?: ResearchLogEntry[];
   };
 }
+
+const MAX_RESEARCH_DURATION = process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION
+  ? parseInt(process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION)
+  : 10;
 
 /**
  * Adapter to convert the new modular deep research system into a tool
@@ -37,7 +42,6 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
     description: "Search the web for information",
     parameters: z.object({
       topic: z.string().describe("The topic or question to research"),
-      maxDepth: z.number().optional().describe("The maximum depth of research"),
       extract_top_k_chunks: z
         .number()
         .optional()
@@ -46,42 +50,39 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
     }),
     execute: async ({
       topic,
-      maxDepth = 7,
       extract_top_k_chunks = 5,
     }): Promise<DeepResearchToolResult> => {
+      const maxDepth = 7;
+      let orchestrator: ResearchOrchestrator | null = null;
       try {
-        // Create configuration
+        const minutes = MAX_RESEARCH_DURATION;
+        const timeout = minutes * 60 * 1000;
+
         const config: WorkflowConfig = {
           maxDepth,
           maxTokens: 25000,
-          timeout: 270000, // 4.5 minutes
+          timeout,
           concurrencyLimit: 3,
         };
 
-        // Define ResearchOptions
         const options: ResearchOptions = {
           extract_top_k_chunks,
         };
 
-        // Create research orchestrator with options
-        const orchestrator = new ResearchOrchestrator(
+        orchestrator = new ResearchOrchestrator(
           myProvider,
           models,
           dataStream,
           options
         );
 
-        // Run the research
         const result = await orchestrator.runDeepResearchWorkflow(
           topic,
           config
         );
 
-        // Prepare the data for the tool result
-        // Use the finalReport as the main content
         const reportContent = result.finalReport;
 
-        // Use the actual step counts returned from the orchestrator
         const completedSteps = result.completedSteps;
         const totalSteps = result.totalSteps;
 
@@ -94,16 +95,19 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
             metrics: result.metrics,
             completedSteps,
             totalSteps,
+            logs: orchestrator.getLogs(),
           },
         };
       } catch (error: any) {
         console.error("Deep research tool error:", error);
+        const logs = orchestrator ? orchestrator.getLogs() : [];
         return {
           success: false,
           error: error.message || "Unknown error in deep research",
           data: {
             completedSteps: 0,
             totalSteps: maxDepth * 5,
+            logs: logs,
           },
         };
       }

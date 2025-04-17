@@ -28,7 +28,7 @@ export class SearchModule {
    */
   async searchWeb(
     query: string,
-    limit: number = 20
+    limit: number = 15
   ): Promise<SearxngSearchResult[]> {
     try {
       const { results } = await searchSearxng(query, {
@@ -75,12 +75,10 @@ export class SearchModule {
         });
       }
 
-      // Apply an overall limit if desired, although limitPerQuery might be sufficient
-      // return combinedResults.slice(0, overallLimit);
       return combinedResults;
     } catch (error) {
       console.error(`Error performing multiple web searches:`, error);
-      return []; // Return empty array on error
+      return [];
     }
   }
 }

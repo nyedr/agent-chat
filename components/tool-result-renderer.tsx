@@ -241,6 +241,10 @@ const ToolResultRendererComponent = ({
   }
 };
 
+const MAX_RESEARCH_DURATION = process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION
+  ? parseInt(process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION)
+  : 10;
+
 const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
   const { state: deepResearchState } = useDeepResearch();
 
@@ -254,7 +258,7 @@ const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
   );
 
   const [startTime] = useState<number>(Date.now());
-  const maxDuration = 5 * 60 * 1000;
+  const maxDuration = MAX_RESEARCH_DURATION * 60 * 1000;
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   useEffect(() => {

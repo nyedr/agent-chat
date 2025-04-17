@@ -33,7 +33,6 @@ import fs from "fs";
 const deepResearchTools: ToolName[] = ["deepResearch"];
 
 const allTools: ToolName[] = [
-  ...deepResearchTools,
   "createDocument",
   "imageSearch",
   "videoSearch",
@@ -169,7 +168,7 @@ export async function POST(request: Request) {
           },
         },
         messages: validMessages,
-        maxSteps: 15,
+        maxSteps: experimental_deepResearch ? 2 : 15,
         experimental_transform: smoothStream({ chunking: "word" }),
         experimental_generateMessageId: generateUUID,
         experimental_activeTools: experimental_deepResearch

@@ -7,13 +7,16 @@ import rehypeRaw from "rehype-raw";
 import { CodeBlock } from "./code-block";
 import { FilePreview } from "./file-preview";
 
+interface ChatMarkdownProps extends Options {
+  content: string;
+  isUserMessage?: boolean;
+}
+
 export default function ChatMarkdown({
   content,
   isUserMessage = false,
-}: {
-  content: string;
-  isUserMessage?: boolean;
-}) {
+  ...props
+}: ChatMarkdownProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [isContentTruncated, setIsContentTruncated] = useState(false);
 
@@ -194,5 +197,9 @@ export default function ChatMarkdown({
     },
   };
 
-  return <Markdown {...markdownComponentProps}>{content}</Markdown>;
+  return (
+    <Markdown {...markdownComponentProps} {...props}>
+      {content}
+    </Markdown>
+  );
 }

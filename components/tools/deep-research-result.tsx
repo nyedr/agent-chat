@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import ChatMarkdown from "../markdown";
 import { Card, CardContent, CardFooter, CardHeader } from "../ui/card";
 import { useDeepResearch } from "@/lib/deep-research-context";
@@ -6,6 +6,7 @@ import { Button } from "../ui/button";
 import Image from "next/image";
 import { getFaviconUrl } from "@/lib/utils";
 import { DeepResearchToolResult } from "@/lib/deep-research/adapter";
+import fastDeepEqual from "fast-deep-equal";
 
 interface DeepResearchResultProps {
   data: DeepResearchToolResult["data"];
@@ -21,10 +22,10 @@ const formatDuration = (ms: number) => {
   return `${minutes}m ${seconds}s`;
 };
 
-export const DeepResearchResult: React.FC<DeepResearchResultProps> = ({
+const DeepResearchResultComponent: React.FC<DeepResearchResultProps> = ({
   data,
 }) => {
-  const { toggleInfo } = useDeepResearch();
+  const { setIsResearchInfoOpen, setStateFromResult } = useDeepResearch();
 
   if (!data) {
     return (
@@ -62,7 +63,10 @@ export const DeepResearchResult: React.FC<DeepResearchResultProps> = ({
       <CardFooter className="flex flex-col gap-2 items-start">
         <Button
           variant="outline"
-          onClick={toggleInfo}
+          onClick={() => {
+            setStateFromResult(data);
+            setIsResearchInfoOpen(true);
+          }}
           className="gap-0 rounded-3xl"
         >
           {avatarFavicons.map((url, index) => (
@@ -79,10 +83,17 @@ export const DeepResearchResult: React.FC<DeepResearchResultProps> = ({
             {sourcesExamined} sources
           </span>
         </Button>
-        <span className="text-muted-foreground mt-4" onClick={toggleInfo}>
+        <span className="text-muted-foreground mt-4">
           Completed in {timeElapsedFormatted} • {sourcesExamined} sources
         </span>
       </CardFooter>
     </Card>
   );
 };
+
+export const DeepResearchResult = memo(
+  DeepResearchResultComponent,
+  (prevProps, nextProps) => {
+    return fastDeepEqual(prevProps.data, nextProps.data);
+  }
+);

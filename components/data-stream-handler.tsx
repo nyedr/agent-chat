@@ -43,8 +43,14 @@ export type DataStreamDelta = {
 
 export function DataStreamHandler({ id }: { id: string }) {
   const { data: dataStream } = useChat({ id });
-  const { addActivity, addSource, initProgress, setDepth, updateProgress } =
-    useDeepResearch();
+  const {
+    addActivity,
+    addSource,
+    initProgress,
+    setDepth,
+    updateProgress,
+    setIsResearchInfoOpen,
+  } = useDeepResearch();
   const { artifact, setArtifact, setMetadata } = useArtifact();
   const lastProcessedIndex = useRef(-1);
   const researchCompleted = useRef(false);
@@ -88,6 +94,7 @@ export function DataStreamHandler({ id }: { id: string }) {
         });
         initProgress(maxDepth, totalSteps);
         researchCompleted.current = false; // Reset completion flag on new init
+        setIsResearchInfoOpen(true);
         return; // Handled, exit early
       }
       if (delta.type === "depth-delta") {
@@ -269,6 +276,7 @@ export function DataStreamHandler({ id }: { id: string }) {
     artifact,
     setArtifact,
     setMetadata,
+    setIsResearchInfoOpen,
   ]);
 
   return null;

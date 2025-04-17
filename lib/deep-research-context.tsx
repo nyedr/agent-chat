@@ -7,16 +7,19 @@ import {
   ReactNode,
   useCallback,
 } from "react";
+import { DeepResearchToolResult } from "./deep-research/adapter";
 
 interface ActivityItem {
   type:
+    | "plan"
     | "search"
-    | "extract"
+    | "scrape"
+    | "vectorize"
     | "analyze"
     | "reasoning"
     | "synthesis"
     | "thought";
-  status: "pending" | "complete" | "error";
+  status: "pending" | "complete" | "error" | "warning";
   message: string;
   timestamp: string;
   depth?: number;
@@ -51,7 +54,8 @@ type DeepResearchAction =
   | { type: "INIT_PROGRESS"; payload: { maxDepth: number; totalSteps: number } }
   | { type: "UPDATE_PROGRESS"; payload: { completed: number; total: number } }
   | { type: "CLEAR_STATE" }
-  | { type: "TOGGLE_INFO"; payload: boolean };
+  | { type: "TOGGLE_INFO"; payload?: boolean }
+  | { type: "SET_STATE_FROM_RESULT"; payload: DeepResearchToolResult["data"] };
 
 interface DeepResearchContextType {
   state: DeepResearchState;
@@ -65,7 +69,8 @@ interface DeepResearchContextType {
   initProgress: (maxDepth: number, totalSteps: number) => void;
   updateProgress: (completed: number, total: number) => void;
   clearState: () => void;
-  toggleInfo: () => void;
+  setIsResearchInfoOpen: (open?: boolean) => void;
+  setStateFromResult: (resultData: DeepResearchToolResult["data"]) => void;
 }
 
 const initialState: DeepResearchState = {
@@ -109,6 +114,17 @@ function deepResearchReducer(
         }),
       };
     case "ADD_ACTIVITY":
+      // --- Prevent adding duplicate log entry during streaming ---
+      const lastActivity = state.activity[state.activity.length - 1];
+      if (
+        lastActivity &&
+        lastActivity.message === action.payload.message &&
+        lastActivity.timestamp === action.payload.timestamp
+      ) {
+        // Skip adding if it looks like an exact duplicate of the last one
+        return state;
+      }
+      // --- End duplicate check ---
       return {
         ...state,
         activity: [...state.activity, action.payload],
@@ -169,7 +185,35 @@ function deepResearchReducer(
     case "TOGGLE_INFO":
       return {
         ...state,
-        isResearchInfoOpen: action.payload,
+        isResearchInfoOpen: action.payload ?? !state.isResearchInfoOpen,
+      };
+    case "SET_STATE_FROM_RESULT":
+      const result = action.payload;
+
+      // Directly use the logs from the result payload.
+      // Assumes logs exist and match ActivityItem structure.
+      const resultActivity: ActivityItem[] = (result.logs ||
+        []) as ActivityItem[];
+
+      // Map sources record to SourceItem array
+      const resultSources: SourceItem[] = Object.entries(
+        result.sources || {}
+      ).map(([url, title]) => ({
+        url,
+        title,
+        relevance: 0.5, // Assign default relevance
+      }));
+
+      return {
+        ...state,
+        activity: resultActivity, // Use the logs directly
+        sources: resultSources,
+        currentDepth: result.metrics?.iterationsCompleted ?? 0, // Use metrics or default
+        maxDepth: state.maxDepth, // Keep original max depth setting
+        completedSteps: result.completedSteps,
+        totalExpectedSteps: result.totalSteps,
+        isActive: false, // Set inactive as research is finished
+        isResearchInfoOpen: true, // Ensure info panel is open
       };
     default:
       return state;
@@ -187,9 +231,15 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "TOGGLE_ACTIVE" });
   }, []);
 
-  const toggleInfo = useCallback(() => {
-    dispatch({ type: "TOGGLE_INFO", payload: !state.isResearchInfoOpen });
-  }, [state.isResearchInfoOpen]);
+  const setIsResearchInfoOpen = useCallback(
+    (open?: boolean) => {
+      dispatch({
+        type: "TOGGLE_INFO",
+        payload: open ?? !state.isResearchInfoOpen,
+      });
+    },
+    [state.isResearchInfoOpen]
+  );
 
   const setActive = useCallback((active: boolean) => {
     dispatch({ type: "SET_ACTIVE", payload: active });
@@ -228,6 +278,13 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "CLEAR_STATE" });
   }, []);
 
+  const setStateFromResult = useCallback(
+    (resultData: DeepResearchToolResult["data"]) => {
+      dispatch({ type: "SET_STATE_FROM_RESULT", payload: resultData });
+    },
+    []
+  );
+
   return (
     <DeepResearchContext.Provider
       value={{
@@ -240,7 +297,8 @@ export function DeepResearchProvider({ children }: { children: ReactNode }) {
         initProgress,
         updateProgress,
         clearState,
-        toggleInfo,
+        setIsResearchInfoOpen,
+        setStateFromResult,
       }}
     >
       {children}

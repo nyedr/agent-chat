@@ -1,6 +1,7 @@
 import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import { Learning } from "./insight-generator";
+import { ReportPlan } from "../types";
 
 /**
  * Report Generator Module that creates a final research report using a single LLM call.
@@ -38,14 +39,37 @@ export class ReportGeneratorModule {
   }
 
   /**
-   * Generates the final research report using a single LLM call.
+   * Replaces [INDEX] placeholders in text with [INDEX](URL) markdown links.
+   */
+  private _replaceSourceIndicesWithLinks(
+    text: string,
+    indexToUrlMap: Map<number, string>
+  ): string {
+    // Regex to find all occurrences of [INDEX]
+    return text.replace(/\[([0-9]+)\]/g, (match, indexStr) => {
+      const index = parseInt(indexStr, 10);
+      const url = indexToUrlMap.get(index);
+      // If URL found, replace [INDEX] with (INDEX)[URL]
+      // Otherwise, return the original match (e.g., [1])
+      return url ? `[${index}](${url})` : match;
+    });
+  }
+
+  /**
+   * Generates the final research report using a single LLM call, guided by a plan.
    */
   async generateFinalReport(
     learnings: Learning[],
-    query: string
+    query: string,
+    plan: ReportPlan | null
   ): Promise<string> {
+    const reportTitle = plan?.report_title || `Research Report: ${query}`;
+    const outlineSections = plan?.report_outline || [
+      { title: "Main Findings", key_question: query },
+    ];
+
     console.log(
-      `Generating full report for query: "${query}" with ${learnings.length} learnings (single call)`
+      `Generating full report for "${reportTitle}" with ${learnings.length} learnings (single call, guided by plan)`
     );
 
     // --- Create Source Map (URL -> {index: number, title?: string}) ---
@@ -67,14 +91,16 @@ export class ReportGeneratorModule {
       }
     });
     const sortedUniqueSources = Array.from(uniqueSourcesMap.keys()).sort();
-    // Rebuild map based on sorted order for consistent indexing
     const finalSourceMap = new Map<string, { index: number; title?: string }>();
+    const indexToUrlMap = new Map<number, string>(); // Create inverse map
     sortedUniqueSources.forEach((source, index) => {
+      const finalIndex = index + 1;
       const originalData = uniqueSourcesMap.get(source);
       finalSourceMap.set(source, {
-        index: index + 1,
+        index: finalIndex,
         title: originalData?.title,
       });
+      indexToUrlMap.set(finalIndex, source); // Populate inverse map
     });
     // --- End Source Map Creation ---
 
@@ -92,21 +118,33 @@ export class ReportGeneratorModule {
       })
       .join("\n\n");
 
-    // Construct the prompt (instructions updated for Source [INDEX])
+    // Construct the section guidance for the prompt based on the plan
+    const sectionGuidance = outlineSections
+      .map(
+        (section, index) =>
+          `${index + 1}. Section Title: "${
+            section.title
+          }" (Focus on answering: "${section.key_question}")`
+      )
+      .join("\n");
+
+    // Construct the prompt (updated to use plan title and section guidance)
     const prompt = `You are a **subject matter expert and research analyst** tasked with generating an **in-depth, comprehensive, and critically analyzed** research report.
 
-**Topic:** ${query}
+**Report Title:** ${reportTitle}
 
 **Based *primarily* on the following research findings (with source index mappings provided):**
 ${learningsText}
 
 **Instructions:**
-1.  **Write a full, detailed research report** including:
-    *   A clear and specific **Title** for the report.
-    *   An engaging **Introduction** that clearly defines the scope, methodology (based on analyzing provided findings), and previews the key themes and arguments to be developed.
-    *   Logically organized **Sections** (aim for 4-6 substantial main sections) that **deeply analyze, synthesize, compare, contrast, and critically evaluate** the provided findings. **Elaborate significantly** on each point, providing context derived from the findings, explaining implications, and drawing connections between different pieces of information. **Do NOT merely summarize or list the findings.** Go beyond the surface level.
+1.  **Write a full, detailed research report** following the structure below:
+    *   A clear and specific **Title** (use the provided "${reportTitle}").
+    *   An engaging **Introduction** that clearly defines the scope (based on the overall query "${query}" and the planned sections), methodology (based on analyzing provided findings), and previews the key themes and arguments to be developed.
+    *   Logically organized **Sections** based on the following planned structure. For each section, **deeply analyze, synthesize, compare, contrast, and critically evaluate** the provided findings relevant to the section's key question. **Elaborate significantly** on each point, providing context derived from the findings, explaining implications, and drawing connections between different pieces of information. **Do NOT merely summarize or list the findings.** Go beyond the surface level.
+        Planned Sections:
+${sectionGuidance}
     *   A thoughtful **Conclusion** summarizing the core arguments and insights derived from the analysis, addressing the nuances of the main topic, acknowledging limitations based on the provided findings, and suggesting specific, logical future directions or unanswered questions arising from the analysis.
-2.  **Cite sources inline** meticulously using the format (Source [INDEX]) *immediately* after the information derived from that source. The INDEX corresponds to the position of the source URL in the automatically generated References section at the end of the report.
+2.  **Cite sources inline** meticulously using the format **\`[INDEX]\`** *immediately* after the information derived from that source. **Crucially: Only use the source indices provided in the 'Based on the following research findings' section above. Do NOT invent or hallucinate source numbers.**
 3.  **DO NOT generate a separate "References" or "Sources" section at the end.** A reference list will be appended automatically later.
 4.  Format the entire report using clear **Markdown**, including appropriate headings (# Title, ## Section Title, ### Subsection Title if necessary for structure).
 5.  Ensure the report flows logically with strong transitions between sections and maintains a professional, objective, and analytical tone throughout.
@@ -117,24 +155,30 @@ ${learningsText}
 
 **Output the complete Markdown report directly, starting with the # Title.**`;
 
-    console.log("Full Report Prompt:", prompt);
+    console.log("Full Report Prompt (Guided by Plan):", prompt);
 
     try {
       // Single LLM call to generate the full report body
       const result = await generateText({
         model: this.llmProvider.chatModel(this.modelId),
         prompt,
-        // Optional: Consider increasing max_tokens if needed and supported
       });
 
       // Clean the entire generated report body
       const cleanedReportBody = this.cleanLLMMarkdown(result.text);
 
+      // --- Replace [INDEX] with (INDEX)[URL] --- NEW STEP ---
+      const reportBodyWithLinks = this._replaceSourceIndicesWithLinks(
+        cleanedReportBody,
+        indexToUrlMap // Use the inverse map
+      );
+      // --- End NEW STEP ---
+
       // Generate the separate references section using the final map
       const referencesSection = this.generateReferences(finalSourceMap);
 
-      // Combine cleaned body, references, and timestamp
-      const finalReport = `${cleanedReportBody}\n\n${referencesSection}\n\n*Report generated: ${new Date().toISOString()}*`;
+      // Combine body with links, references, and timestamp
+      const finalReport = `${reportBodyWithLinks}\n\n${referencesSection}\n\n*Report generated: ${new Date().toISOString()}*`;
 
       return finalReport;
     } catch (error) {
@@ -160,7 +204,8 @@ ${learningsText}
       return this.generateEmergencyReportFromLearnings(
         learnings,
         query,
-        emergencySourceMap
+        emergencySourceMap,
+        plan
       );
     }
   }
@@ -211,7 +256,8 @@ ${learningsText}
   private generateEmergencyReportFromLearnings(
     learnings: Learning[],
     query: string,
-    sourceMap: Map<string, { index: number; title?: string }>
+    sourceMap: Map<string, { index: number; title?: string }>,
+    plan?: ReportPlan | null
   ): string {
     // Group learnings by source - RENAME local variable to avoid conflict
     const learningsBySourceGroup: Record<string, Learning[]> = {};

@@ -72,11 +72,15 @@ export const revisedToolPrompts: Record<ToolName, string> = {
   deepResearch: `
 **Tool: \`deepResearch\`**
 *   **Action:** Conducts in-depth research on a complex topic, synthesizing information from multiple web sources into a structured report. This is more comprehensive and time-consuming than \`searchWeb\`.
-*   **When to Use:** Use *only* for complex questions requiring significant analysis, comparison, or synthesis across multiple sources (e.g., "Compare the economic policies of X and Y," "Provide a detailed report on the history of Z," "Analyze the pros and cons of technology A"). Do *not* use for simple fact-finding.
+*   **When to Use:**
+    *   Use *only* for complex questions requiring significant analysis, comparison, or synthesis across multiple sources (e.g., "Compare the economic policies of X and Y," "Provide a detailed report on the history of Z," "Analyze the pros and cons of technology A").
+    *   Do *not* use for simple fact-finding.
+    *   **CRITICAL: Call this tool ONLY ONCE per user request that requires deep research. It performs the entire research process internally.**
 *   **Input:**
-    *   \`query\`: (Required) A clearly defined, specific research topic or question suitable for in-depth analysis.
-*   **Output:** A structured research report delivered to you.
-*   **Workflow:** Summarize the key findings of the report for the user in the chat. Consider using \`createDocument\` to place the full report in the Artifact panel if it's lengthy.
+    *   \`topic\`: (Required, string) A clearly defined, specific research topic or question suitable for in-depth analysis.
+    *   \`extract_top_k_chunks\`: (Optional, number, default: 5) The number of relevant text chunks to extract per source during processing. Adjust only if you have a specific reason based on the topic's nature.
+*   **Output:** A structured research result delivered to you (contains report content, sources, metrics, detailed logs).
+*   **Workflow:** The tool performs multiple steps internally (planning, search, scraping, synthesis). Upon completion, summarize the key findings from the \`reportContent\` in the final result for the user in the chat.
 `,
   pythonInterpreter: `
 **Tool: \`pythonInterpreter\`**
