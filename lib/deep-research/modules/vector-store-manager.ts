@@ -175,16 +175,18 @@ export class VectorStoreManager {
   private vectorStore: InMemoryVectorStore;
   private textSplitter: SimpleTextSplitter;
   private embeddingEndpoint: string;
+  private fetch: typeof fetch;
 
   /**
    * Create a new VectorStoreManager
    */
-  constructor() {
+  constructor(fetchImplementation: typeof fetch = fetch) {
     this.vectorStore = new InMemoryVectorStore();
     this.textSplitter = new SimpleTextSplitter(1000, 200);
     this.embeddingEndpoint =
       (process.env.PYTHON_SERVER_URL || "http://localhost:5328") +
       "/api/python/embed";
+    this.fetch = fetchImplementation;
   }
 
   /**
@@ -208,18 +210,27 @@ export class VectorStoreManager {
       return [];
     }
 
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort("Embedding request timed out after 30s"),
+      30_000
+    ); // 30 s
+
     try {
       console.log(
         `Calling Python embedding service directly for ${validTexts.length} texts: ${this.embeddingEndpoint}`
       );
 
-      const response = await fetch(this.embeddingEndpoint, {
+      const response = await this.fetch(this.embeddingEndpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ texts: validTexts }), // Send only valid texts
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout); // Clear timeout if fetch completes
 
       if (!response.ok) {
         throw new Error(
@@ -234,9 +245,14 @@ export class VectorStoreManager {
       }
 
       return data.embeddings;
-    } catch (error) {
-      console.error("Error generating embeddings:", error);
-      throw error;
+    } catch (error: any) {
+      console.error("Error fetching embeddings:", error);
+      clearTimeout(timeout); // Ensure timeout is cleared on error too
+      // Log specific abort error
+      if (error.name === "AbortError") {
+        console.error("Embedding request aborted:", error.message);
+      }
+      return [];
     }
   }
 
@@ -311,12 +327,23 @@ export class VectorStoreManager {
     // We call getEmbeddings which already filters for valid text
     const embeddings = await this.getEmbeddings(chunkTexts);
 
+    // Guard against mismatch between chunks sent and embeddings received
     if (embeddings.length !== allChunks.length) {
-      console.error(
-        `Mismatch between chunks (${allChunks.length}) and embeddings (${embeddings.length})`
+      console.warn(
+        `[VectorStore] Embedding service returned ${embeddings.length} vectors for ${allChunks.length} chunks – skipping inconsistent items.`
       );
-      // This could happen if getEmbeddings filtered out some texts that were valid here
-      return;
+      // Salvage the matching subset by truncating the longer array
+      const minCount = Math.min(embeddings.length, allChunks.length);
+      allChunks.splice(minCount);
+      embeddings.splice(minCount);
+    }
+
+    // Proceed only if we still have matching chunks and embeddings
+    if (embeddings.length === 0 || allChunks.length === 0) {
+      console.warn(
+        "[VectorStore] No consistent chunks/embeddings remaining after mismatch check."
+      );
+      return; // Nothing to add
     }
 
     // Create vector objects for storage

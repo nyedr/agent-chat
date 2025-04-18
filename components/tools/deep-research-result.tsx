@@ -4,7 +4,7 @@ import { Card, CardContent, CardFooter, CardHeader } from "../ui/card";
 import { useDeepResearch } from "@/lib/deep-research-context";
 import { Button } from "../ui/button";
 import Image from "next/image";
-import { getFaviconUrl } from "@/lib/utils";
+import { cn, getFaviconUrl } from "@/lib/utils";
 import { DeepResearchToolResult } from "@/lib/deep-research/adapter";
 import fastDeepEqual from "fast-deep-equal";
 

@@ -4,18 +4,46 @@ import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 
 import { ModelsByCapability } from "../../ai/models";
 import type { Learning } from "./insight-generator";
-import type { ResearchLogEntry, GapAnalysisResult } from "../types";
+import type {
+  ResearchLogEntry,
+  GapAnalysisResult,
+  ResearchState,
+  Gap,
+} from "../types";
+import type { ProgressEventType } from "./progress-updater";
+import { QUALITY_DOMAINS } from "../utils";
 
-const GapAnalysisSchema = z.object({
+const GapSchema = z.object({
+  text: z
+    .string()
+    .min(1)
+    .describe("Specific description of the knowledge gap."),
+  severity: z
+    .number()
+    .min(1)
+    .max(3)
+    .describe(
+      "Severity of the gap (1=Low, 2=Medium, 3=High/Critical). High for fundamental missing info."
+    ),
+  confidence: z
+    .number()
+    .min(0)
+    .max(1)
+    .describe(
+      "Confidence (0-1) that targeted search can resolve this specific gap."
+    ),
+});
+
+const GapAnalysisResultSchema = z.object({
   is_complete: z
     .boolean()
     .describe(
       "Is the key question sufficiently answered by the provided learnings?"
     ),
   remaining_gaps: z
-    .array(z.string())
+    .array(GapSchema)
     .describe(
-      "List of specific knowledge gaps remaining for the key question, if not complete."
+      "List of structured knowledge gaps, if not complete. Empty array if complete."
     ),
 });
 
@@ -28,7 +56,11 @@ interface GapAnalyzerDependencies {
     message: string,
     depth?: number
   ) => void;
-  updateProgress: (state: any, type: string, message: string) => void;
+  updateProgress: (
+    state: ResearchState,
+    type: ProgressEventType,
+    message: string
+  ) => void;
 }
 
 /**
@@ -37,7 +69,7 @@ interface GapAnalyzerDependencies {
 export async function analyzeKnowledgeGaps(
   keyQuestion: string,
   latestLearnings: Learning[],
-  state: any,
+  state: ResearchState,
   dependencies: GapAnalyzerDependencies
 ): Promise<GapAnalysisResult> {
   const { addLogEntry, updateProgress, llmProvider, models } = dependencies;
@@ -68,7 +100,13 @@ export async function analyzeKnowledgeGaps(
     );
     return {
       is_complete: false,
-      remaining_gaps: ["Need initial information."],
+      remaining_gaps: [
+        {
+          text: `Re-evaluate findings for "${keyQuestion}"`,
+          severity: 3 as 1 | 2 | 3,
+          confidence: 0.5,
+        } as Gap,
+      ],
     };
   }
 
@@ -76,21 +114,39 @@ export async function analyzeKnowledgeGaps(
     .map((l, i) => `[L${i + 1}] ${l.text} (Source: ${l.source || "N/A"})`)
     .join("\n");
 
-  const gapPrompt = `You are a critical research evaluator.
+  const gapPrompt = `You are a critical research evaluator tasked with identifying knowledge gaps.
 
-Original Key Question for this section: "${keyQuestion}"
+Original Key Question: "${keyQuestion}"
 
-Latest Learnings Gathered for this question:
+Latest Learnings Gathered:
 \`\`\`
 ${learningsContext}
 \`\`\`
 
-Based _only_ on the latest learnings provided:
-1. Is the Key Question now sufficiently and comprehensively answered? Consider if critical details like **mathematical formulas, specific algorithms, quantitative data, or implementation specifics** are present if relevant to the question.
-2. If NOT sufficiently answered, list 1-3 specific, actionable knowledge gaps that still need to be addressed to fully answer the Key Question. Be precise about what kind of detail is missing (e.g., "Need mathematical derivation of X", "Lack quantitative examples of Y", "Specific algorithm for Z is unclear").
+Instructions:
+1. Evaluate if the Key Question is **comprehensively** answered based *only* on the provided Learnings. Consider if critical details (e.g., formulas, algorithms, benchmarks, specific examples) are present, if relevant.
+2. If the question is NOT comprehensively answered, identify the **most important 1-3 remaining knowledge gaps**.
+3. For EACH identified gap, provide:
+   - 'text': A specific, actionable description of the missing information.
+   - 'severity': An integer (1, 2, or 3) indicating how critical the gap is to answering the Key Question (1: Low - minor detail, 2: Medium - helpful context, 3: High - fundamental info).
+   - 'confidence': A float (0.0 to 1.0) estimating the likelihood that a *targeted web search* can successfully find this specific missing information.
 
-Return ONLY a JSON object matching this schema:
-${JSON.stringify(GapAnalysisSchema.shape)}
+Return ONLY a JSON object matching this structure:
+\`\`\`json
+{
+  "is_complete": boolean, // True if Key Question is comprehensively answered, false otherwise.
+  "remaining_gaps": [
+    {
+      "text": "Specific knowledge gap description...",
+      "severity": 1 | 2 | 3,
+      "confidence": number (0.0 - 1.0)
+    }
+    // ... up to 2 more gap objects if needed ...
+  ]
+}
+\`\`\`
+If 'is_complete' is true, 'remaining_gaps' MUST be an empty array.
+If 'is_complete' is false, 'remaining_gaps' MUST contain at least one gap object.
 `;
 
   try {
@@ -100,17 +156,15 @@ ${JSON.stringify(GapAnalysisSchema.shape)}
       `Performing gap analysis via LLM...`,
       state.currentDepth
     );
-    const { object: gapResult } = await generateObject({
+    const { object: gapResult } = (await generateObject({
       model: llmProvider.chatModel(models.reasoning),
-      schema: GapAnalysisSchema,
+      schema: GapAnalysisResultSchema,
       prompt: gapPrompt,
-    });
+    })) as { object: GapAnalysisResult };
     addLogEntry(
       "analyze",
       "complete",
-      `Gap analysis complete. Question complete: ${
-        gapResult.is_complete
-      }. Gaps: ${gapResult.remaining_gaps.join(", ") || "None"}`,
+      `Gap analysis complete. Question complete: ${gapResult.is_complete}. Gaps identified: ${gapResult.remaining_gaps.length}`,
       state.currentDepth
     );
     updateProgress(
@@ -129,9 +183,17 @@ ${JSON.stringify(GapAnalysisSchema.shape)}
       state.currentDepth
     );
     updateProgress(state, "error", "Failed to analyze knowledge gaps.");
+    // Define the fallback gap explicitly with the correct type
+    const fallbackGap: Gap = {
+      text: `Re-evaluate findings for "${keyQuestion}"`,
+      severity: 3, // TypeScript should infer this correctly now within the typed variable
+      confidence: 0.5,
+    };
     return {
       is_complete: false,
-      remaining_gaps: [`Re-evaluate findings for "${keyQuestion}"`],
+      remaining_gaps: [
+        fallbackGap, // Use the typed variable
+      ],
     };
   }
 }
@@ -142,8 +204,7 @@ ${JSON.stringify(GapAnalysisSchema.shape)}
 export async function generateTargetedQueries(
   gap: string,
   originalQuery: string,
-  keyQuestion: string,
-  state: any,
+  state: ResearchState,
   dependencies: GapAnalyzerDependencies
 ): Promise<string[]> {
   const { addLogEntry, updateProgress, llmProvider, models } = dependencies;
@@ -160,14 +221,24 @@ export async function generateTargetedQueries(
     `Generating targeted query for gap: ${gap.substring(0, 50)}...`
   );
 
-  const queryGenPrompt = `Research Context: The overall goal is to research "${originalQuery}". We are currently focused on answering the sub-question "${keyQuestion}".
+  const domainHintText = QUALITY_DOMAINS.map((d) => `"site:${d}"`).join(", ");
 
-Knowledge Gap Identified: "${gap}"
-
-Generate 1 or 2 highly specific, targeted search engine queries (3-7 words each) that directly address ONLY the identified knowledge gap.
-
-Return ONLY a JSON array of strings. Example: ["specific query 1", "specific query 2"]
-`;
+  const queryGenPrompt = `
+  You are crafting next-step web-search queries.
+  
+  • Gap: "${gap}"
+  • Original topic: "${originalQuery}"
+  
+  Return 1 or 2 concise queries **in JSON array form**.
+  
+  Guidelines:
+    - If you suspect an authoritative domain will help, optionally add a site filter (${domainHintText})
+    - Otherwise don't add a site filter.
+    - Query should stay usable even if the domain has no results.
+    - Prefer adding a metric (accuracy, R², latency, etc.) or a filetype:pdf hint when it aids precision.
+    - Put variables in quotes to turn off stemming: "scale factor", "zero-point".
+    - Prefer filetype:pdf for formulas, table:, csv:, or "benchmark" for numbers.
+  `;
 
   try {
     const result = await generateText({

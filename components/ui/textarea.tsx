@@ -193,7 +193,7 @@ const HighlightableTextarea = React.forwardRef<
       "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm";
 
     const highlightDivBaseStyles =
-      "min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm";
+      "h-full min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm";
 
     const overlayStyles =
       "whitespace-pre-wrap break-words font-inherit tracking-inherit leading-inherit p-0 m-0 border-0 text-inherit";
@@ -207,7 +207,8 @@ const HighlightableTextarea = React.forwardRef<
             overlayStyles,
             className,
             "absolute inset-0 z-0",
-            "pointer-events-none"
+            "pointer-events-none",
+            "h-full"
           )}
           aria-hidden="true"
         >

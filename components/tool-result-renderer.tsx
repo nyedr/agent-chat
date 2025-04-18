@@ -2,14 +2,10 @@ import { SearchResults } from "./tools/search-results";
 
 import { DocumentToolResult } from "./tools/document";
 import { DocumentPreview } from "./tools/document-preview";
-import React, { useEffect, useMemo, useState, memo } from "react";
+import { memo } from "react";
 
-import { useDeepResearch } from "@/lib/deep-research-context";
 import { ToolCall } from "./tools/tool-call";
-import { Progress } from "./ui/progress";
-import { motion } from "framer-motion";
 import { DeepResearchResult } from "./tools/deep-research-result";
-import { calculateProgressPercentage, formatTime } from "@/lib/utils";
 import fastDeepEqual from "fast-deep-equal";
 import { PythonInterpreter } from "./tools/python-interpreter-result";
 import { ToolName, ToolReturnTypes } from "@/lib/ai/tools";
@@ -19,6 +15,7 @@ import { Eye, Pencil, Trash2 } from "lucide-react";
 import { GetFileInfoResultComponent } from "./tools/get-file-info-result";
 import { EditDocumentResultComponent } from "./tools/edit-document-result";
 import { CodeBlock } from "./code-block";
+import { DeepResearchProgress } from "./deep-research";
 
 interface ToolResultRendererProps {
   toolName: ToolName;
@@ -57,7 +54,7 @@ const ToolResultRendererComponent = ({
           />
         );
       case "deepResearch":
-        return <DeepResearchProgress state={state} />;
+        return <DeepResearchProgress />;
       case "createDocument":
         return <DocumentPreview isReadonly={false} args={args} />;
       case "pythonInterpreter":
@@ -239,84 +236,6 @@ const ToolResultRendererComponent = ({
         />
       );
   }
-};
-
-const MAX_RESEARCH_DURATION = process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION
-  ? parseInt(process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION)
-  : 10;
-
-const DeepResearchProgress: React.FC<{ state: string }> = ({ state }) => {
-  const { state: deepResearchState } = useDeepResearch();
-
-  const progress = useMemo(
-    () =>
-      calculateProgressPercentage(
-        deepResearchState.completedSteps,
-        deepResearchState.totalExpectedSteps
-      ),
-    [deepResearchState.completedSteps, deepResearchState.totalExpectedSteps]
-  );
-
-  const [startTime] = useState<number>(Date.now());
-  const maxDuration = MAX_RESEARCH_DURATION * 60 * 1000;
-  const [currentTime, setCurrentTime] = useState(Date.now());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const elapsed = useMemo(
-    () => Math.min(currentTime - startTime, maxDuration),
-    [currentTime, startTime, maxDuration]
-  );
-  const formattedTimeElapsed = formatTime(elapsed);
-  const formattedMaxDuration = formatTime(maxDuration);
-
-  const currentActivity =
-    deepResearchState.activity.length > 0
-      ? deepResearchState.activity[deepResearchState.activity.length - 1]
-          .message
-      : "Initializing research...";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="w-full space-y-4 rounded-xl border bg-card p-5 text-card-foreground shadow-md"
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-semibold text-sm text-foreground">
-          Research in progress...
-        </span>
-        <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-          <span>
-            Depth: {deepResearchState.currentDepth}/{deepResearchState.maxDepth}
-          </span>
-          <span>•</span>
-          <span>
-            Step: {deepResearchState.completedSteps}/
-            {deepResearchState.totalExpectedSteps}
-          </span>
-        </div>
-      </div>
-
-      <Progress max={100} value={progress} className="w-full h-2" />
-
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          Time Elapsed: {formattedTimeElapsed} / {formattedMaxDuration}
-        </span>
-      </div>
-
-      <div className="border-t border-border/70 pt-2 text-xs text-muted-foreground">
-        <span className="font-medium">Current Step:</span> {currentActivity}
-      </div>
-    </motion.div>
-  );
 };
 
 export const ToolResultRenderer = memo(

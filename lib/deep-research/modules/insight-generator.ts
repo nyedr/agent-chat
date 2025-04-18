@@ -108,7 +108,7 @@ export class InsightGeneratorModule {
       if (this.vectorStoreManager) {
         const relevantChunks = await this.vectorStoreManager.search(
           specificQuery,
-          10
+          5
         );
         if (relevantChunks.length > 0) {
           // Format the chunks with source information
@@ -155,7 +155,7 @@ export class InsightGeneratorModule {
         // Ensure we have the source of context
         const relevantChunks = await this.vectorStoreManager.search(
           specificQuery,
-          10
+          5
         );
         relevantChunks.forEach((chunk) => {
           if (chunk.metadata?.url && typeof chunk.metadata.url === "string") {

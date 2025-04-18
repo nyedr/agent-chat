@@ -1,5 +1,15 @@
 import { DataStreamWriter } from "ai";
-import type { ResearchLogEntry } from "../types";
+import type { ResearchLogEntry, ResearchState } from "../types";
+import { randomUUID } from "crypto";
+
+// Define the specific event types allowed for progress updates
+export type ProgressEventType =
+  | "activity" // A significant task started/is in progress
+  | "activity-delta" // A sub-task completed or significant change occurred
+  | "depth-delta" // Starting a new research depth level
+  | "warning" // A non-critical issue occurred
+  | "error" // A critical error occurred
+  | "complete"; // The entire research process finished
 
 export class ProgressUpdater {
   private dataStream: DataStreamWriter | null;
@@ -62,8 +72,11 @@ export class ProgressUpdater {
       state.currentDepth
     );
 
+    const eventId = randomUUID();
+
     this.dataStream.writeData({
       type: "progress-init",
+      id: eventId,
       content: {
         maxDepth: state.maxDepth,
         totalSteps: initialTotalSteps,
@@ -73,44 +86,38 @@ export class ProgressUpdater {
 
   /** Updates progress through the data stream */
   updateProgress(
-    state: {
-      currentDepth: number;
-      maxDepth: number;
-      completedSteps: number;
-      totalSteps: number;
-    },
-    type: string,
+    state: ResearchState,
+    type: ProgressEventType,
     message: string
   ): void {
-    if (!this.dataStream) {
-      return;
-    }
+    if (!this.dataStream) return;
+
+    const eventId = randomUUID();
+
+    // Calculate total based on completed + outstanding (queue length) + 1 for final report
+    const outstanding = state.researchQueue.length;
+    const done = state.completedSteps;
+    // Use simple done + outstanding + 1 (final report) for total estimate
+    const dynamicTotalSteps = done + outstanding + 1;
 
     const payload = {
       type,
+      id: eventId,
       content: {
         message,
         current: state.currentDepth,
         max: state.maxDepth,
         completedSteps: state.completedSteps,
         totalSteps:
-          type === "complete" ? state.completedSteps : state.totalSteps,
+          type === "complete" ? state.completedSteps : dynamicTotalSteps,
         timestamp: new Date().toISOString(),
       },
     };
 
-    if (
-      type === "depth-delta" ||
-      type === "activity-delta" ||
-      type === "warning" ||
-      type === "error" ||
-      type === "complete"
-    ) {
-      console.log(
-        `[ProgressUpdater] Sending Progress (${type}):`,
-        JSON.stringify(payload)
-      );
-    }
+    console.log(
+      `[ProgressUpdater] Sending Progress (${type}):`,
+      JSON.stringify(payload)
+    );
 
     this.dataStream.writeData(payload);
   }

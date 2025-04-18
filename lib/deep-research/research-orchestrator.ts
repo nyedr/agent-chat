@@ -1,6 +1,6 @@
 import { DataStreamWriter } from "ai";
 
-import { SearchModule, ResearchSearchResult } from "./modules/search";
+import { SearchModule } from "./modules/search";
 import { ContentScraperModule } from "./modules/content-scraper";
 import { VectorStoreManager } from "./modules/vector-store-manager";
 import { InsightGeneratorModule, Learning } from "./modules/insight-generator";
@@ -11,10 +11,13 @@ import {
   ReportPlan,
   ResearchLogEntry,
   GapAnalysisResult,
+  ResearchState,
+  Gap,
 } from "./types";
 import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 import { ModelsByCapability } from "../ai/models";
 import { ScrapeResult } from "../search/types";
+import { SearxngSearchResult } from "../search/searxng";
 import { curateSources } from "./utils";
 import { ProgressUpdater } from "./modules/progress-updater";
 import { planInitialResearch } from "./modules/planner";
@@ -88,7 +91,7 @@ export class ResearchOrchestrator {
     // Initialize insight generation and connect to vector store
     this.insightModule = new InsightGeneratorModule(
       llmProvider,
-      models.default,
+      models.light,
       this.vectorStore
     );
 
@@ -136,9 +139,20 @@ export class ResearchOrchestrator {
       completedSteps: 0,
       totalSteps: 0,
       shouldContinue: true,
-      researchQueue: [] as string[],
+      researchQueue: [] as Gap[],
       originalQuery: query, // Store the original query
       reportPlan: null as ReportPlan | null, // Add reportPlan state
+    };
+
+    // Function to calculate priority (can be customized)
+    const calculatePriority = (gap: Gap): number => {
+      // Estimate effort loosely based on gap text length (longer might require more specific search)
+      const estimatedEffort = Math.max(1, gap.text.length / 50); // Arbitrary scaling, avoid division by zero
+      // Priority = (Severity * Confidence) / Estimated Effort
+      // Higher severity/confidence increase priority, longer text (higher effort) decreases it slightly
+      const priority = (gap.severity * gap.confidence) / estimatedEffort;
+      // Clamp priority to avoid extreme values, e.g., 0 to 10
+      return Math.max(0, Math.min(priority, 10));
     };
 
     try {
@@ -155,14 +169,27 @@ export class ResearchOrchestrator {
         ), // Bind context
       });
       researchState.reportPlan = reportPlan; // Store the plan
-      // Initialize queue with KEY QUESTIONS from the plan
+      researchState.completedSteps += PLANNING_STEP; // credit the planning work
+      // Initialize queue with KEY QUESTIONS from the plan as Gap objects
       researchState.researchQueue = reportPlan.report_outline.map(
-        (section) => section.key_question
+        (section): Gap => ({
+          text: section.key_question,
+          severity: 3, // Initial key questions are high severity
+          confidence: 0.8, // Reasonably confident search can find info
+        })
+      );
+      // Calculate initial priorities and sort
+      researchState.researchQueue.forEach(
+        (gap) => (gap.priority = calculatePriority(gap))
+      );
+      researchState.researchQueue.sort(
+        (a, b) => (b.priority ?? 0) - (a.priority ?? 0)
       );
 
       // Determine the first query to process
-      let currentQuery = researchState.researchQueue.shift(); // Get first key question
-      if (!currentQuery) {
+      let currentGap: Gap | undefined = researchState.researchQueue.shift(); // Get highest priority Gap
+
+      if (!currentGap) {
         this.progressUpdater.addLogEntry(
           "plan",
           "warning",
@@ -172,7 +199,9 @@ export class ResearchOrchestrator {
         console.warn(
           "Planning resulted in no key questions. Using original query."
         );
-        currentQuery = query; // Use original query if planning yielded nothing
+        // Create a fallback Gap for the original query
+        currentGap = { text: query, severity: 3, confidence: 0.8 };
+        currentGap.priority = calculatePriority(currentGap);
       }
 
       // Calculate initial total steps (NOW we have the queue size)
@@ -209,18 +238,19 @@ export class ResearchOrchestrator {
       while (
         researchState.currentDepth < researchState.maxDepth &&
         researchState.shouldContinue &&
-        currentQuery &&
+        currentGap && // Check if there is a current gap to process
         Date.now() - startTime < timeLimit
       ) {
         researchState.currentDepth++; // Increment depth at the START of the loop iteration
         const currentDepth = researchState.currentDepth; // For logging
+        const currentQueryText = currentGap.text; // Extract text for current processing
 
         this.progressUpdater.addLogEntry(
           "thought",
           "pending",
           `Starting iteration depth ${currentDepth}/${
             researchState.maxDepth
-          } for query: ${currentQuery.substring(0, 50)}...`,
+          } for query: ${currentQueryText.substring(0, 50)}...`,
           currentDepth
         );
         this.progressUpdater.updateProgress(
@@ -228,14 +258,14 @@ export class ResearchOrchestrator {
           "depth-delta",
           `Starting research depth ${currentDepth}/${
             researchState.maxDepth
-          } for query: ${currentQuery.substring(0, 50)}...`
+          } for query: ${currentQueryText.substring(0, 50)}...`
         );
 
         let iterationSuccessful = true; // Track if iteration completes useful work
 
         // --- Phase 1: Search & Curate ---
         const sourceResults = await this.retrieveAndCurateSources(
-          currentQuery,
+          currentQueryText, // Use gap text
           researchState // retrieveAndCurateSources now handles logging using progressUpdater
         );
         if (sourceResults.length > 0) {
@@ -253,7 +283,7 @@ export class ResearchOrchestrator {
           processedContents = await this.scrapeAndConvertContent(
             sourceResults,
             researchState, // scrapeAndConvertContent now handles logging using progressUpdater
-            query // Pass originalQuery here
+            researchState.originalQuery // Pass originalQuery from state
           );
           if (processedContents.length > 0) {
             researchState.completedSteps++; // Increment for successful scrape
@@ -287,8 +317,8 @@ export class ResearchOrchestrator {
         // Always attempt insight generation if we have a vector store or previous learnings
         if (this.vectorStore || researchState.allLearnings.length > 0) {
           insightResult = await this.aggregateContextAndGenerateInsights(
-            currentQuery,
-            query, // Pass originalQuery here
+            currentQueryText, // Use gap text
+            researchState.originalQuery, // Pass originalQuery from state
             researchState // aggregateContextAndGenerateInsights now handles logging using progressUpdater
           );
           if (insightResult && insightResult.learnings.length > 0) {
@@ -297,19 +327,21 @@ export class ResearchOrchestrator {
             // Logging handled within aggregateContextAndGenerateInsights via progressUpdater
           } else {
             // Log if no insights were generated for this query
-            console.log(`No new insights generated for query: ${currentQuery}`);
+            console.log(
+              `No new insights generated for query: ${currentQueryText}`
+            );
             // Logging handled within aggregateContextAndGenerateInsights via progressUpdater
           }
         } else {
           // Skip insight generation if scrape/vectorize failed AND no prior learnings exist
           console.log(
-            `Skipping insight generation for query: ${currentQuery} due to lack of scraped content and prior context.`
+            `Skipping insight generation for query: ${currentQueryText} due to lack of scraped content and prior context.`
           );
           // Use ProgressUpdater for logging
           this.progressUpdater.addLogEntry(
             "synthesis",
             "warning",
-            `Skipping insight generation for query: ${currentQuery} due to lack of scraped content.`,
+            `Skipping insight generation for query: ${currentQueryText} due to lack of scraped content.`,
             currentDepth
           );
           // Use ProgressUpdater for updating progress
@@ -317,22 +349,22 @@ export class ResearchOrchestrator {
             // Send progress update
             researchState,
             "warning",
-            `Skipping insight generation for ${currentQuery}.`
+            `Skipping insight generation for ${currentQueryText}.`
           );
         }
 
         // --- Gap Analysis & Targeted Search ---
         const currentLearnings = insightResult.learnings || []; // Learnings from *this* iteration
-        let gapResult: GapAnalysisResult = {
+        let gapAnalysisOutput: GapAnalysisResult = {
           is_complete: false,
           remaining_gaps: [],
         };
 
         // Only perform gap analysis if the insight generation produced learnings
-        // Also check if currentQuery exists (TypeScript safety)
-        if (currentQuery && currentLearnings.length > 0) {
-          gapResult = await analyzeKnowledgeGaps(
-            currentQuery,
+        // Also check if currentQueryText exists (TypeScript safety)
+        if (currentQueryText && currentLearnings.length > 0) {
+          gapAnalysisOutput = await analyzeKnowledgeGaps(
+            currentQueryText, // Use gap text
             currentLearnings,
             researchState,
             {
@@ -347,16 +379,22 @@ export class ResearchOrchestrator {
             }
           );
           researchState.completedSteps++; // Count gap analysis as a step
-        } else if (currentQuery) {
+        } else if (currentQueryText) {
           // If no learnings, assume the question is not complete and needs initial info
-          gapResult = {
+          gapAnalysisOutput = {
             is_complete: false,
-            remaining_gaps: [`Need initial information for "${currentQuery}"`],
+            remaining_gaps: [
+              {
+                text: `Need initial information for "${currentQueryText}"`,
+                severity: 3,
+                confidence: 0.8,
+              } as Gap,
+            ],
           };
           this.progressUpdater.addLogEntry(
             "analyze",
             "warning",
-            `Skipping gap analysis for "${currentQuery}" due to no new learnings.`,
+            `Skipping gap analysis for "${currentQueryText}" due to no new learnings.`,
             currentDepth
           );
           this.progressUpdater.updateProgress(
@@ -367,19 +405,29 @@ export class ResearchOrchestrator {
           );
         }
 
-        // --- Queue Management --- (Replaces old follow-up logic)
+        // --- Queue Management --- (Handles Gap objects and priority)
         if (
-          currentQuery && // Ensure currentQuery is valid
-          !gapResult.is_complete &&
-          gapResult.remaining_gaps.length > 0
+          currentGap && // Ensure we have the original gap context
+          !gapAnalysisOutput.is_complete &&
+          gapAnalysisOutput.remaining_gaps.length > 0
         ) {
-          const topGap = gapResult.remaining_gaps[0];
+          // Calculate priority for newly identified gaps
+          gapAnalysisOutput.remaining_gaps.forEach(
+            (gap) => (gap.priority = calculatePriority(gap))
+          );
+
+          // Sort identified gaps by priority (highest first)
+          const sortedNewGaps = gapAnalysisOutput.remaining_gaps.sort(
+            (a, b) => (b.priority ?? 0) - (a.priority ?? 0)
+          );
+
+          const topNewGap = sortedNewGaps[0]; // Consider the highest priority *new* gap
+
           // Simple approach: Limit targeted searches overall within maxDepth
           if (researchState.currentDepth < researchState.maxDepth) {
             const targetedQueries = await generateTargetedQueries(
-              topGap,
+              topNewGap.text, // Use text from the highest priority new gap
               researchState.originalQuery,
-              currentQuery,
               researchState,
               {
                 llmProvider: this.llmProvider,
@@ -393,75 +441,62 @@ export class ResearchOrchestrator {
               }
             );
             if (targetedQueries.length > 0) {
-              researchState.completedSteps++; // Count successful query generation
-              researchState.totalSteps +=
-                targetedQueries.length * BASE_STEPS_PER_ITERATION;
-              console.log(
-                `[Orchestrator] Added ${targetedQueries.length} targeted queries. New estimated total steps: ${researchState.totalSteps}`
+              // Convert targeted query strings back into Gap objects for the queue
+              const newGapObjects: Gap[] = targetedQueries.map((qText) => ({
+                text: qText,
+                severity: topNewGap.severity, // Inherit severity from parent gap? Or set high?
+                confidence: 0.9, // High confidence as it's targeted
+              }));
+              // Assign priority to new gap objects
+              newGapObjects.forEach(
+                (gap) => (gap.priority = calculatePriority(gap))
               );
-              // Increment step count *after* successful query generation call returns
-              if (targetedQueries.length > 0) {
-                researchState.completedSteps++; // Count successful query generation
-                // === FIX: Update total steps (Only apply once) ===
-                researchState.totalSteps +=
-                  targetedQueries.length * BASE_STEPS_PER_ITERATION;
-                console.log(
-                  `[Orchestrator] Added ${targetedQueries.length} targeted queries. New estimated total steps: ${researchState.totalSteps}`
-                );
-                // === END FIX ===
-              }
 
-              if (targetedQueries.length > 0) {
-                // Add targeted queries to the FRONT of the queue
-                researchState.researchQueue.unshift(...targetedQueries);
-                // Re-add the current key question AFTER the targeted ones to re-evaluate it later
-                researchState.researchQueue.splice(
-                  targetedQueries.length,
+              researchState.completedSteps++; // Count query generation as a step
+              researchState.totalSteps +=
+                newGapObjects.length * BASE_STEPS_PER_ITERATION; // Update total based on *new* gaps
+              console.log(
+                `[Orchestrator] Added ${
+                  newGapObjects.length
+                } targeted queries for gap "${topNewGap.text.substring(
                   0,
-                  currentQuery
-                );
-                // Logging handled within generateTargetedQueries via progressUpdater
-              } else {
-                // If generating targeted queries failed, just move on for now
-                console.warn(
-                  "Failed to generate targeted queries for gap. Moving to next item in queue."
-                );
-                // Logging handled within generateTargetedQueries via progressUpdater
-              }
-            } else {
-              this.progressUpdater.addLogEntry(
-                "analyze",
-                "warning",
-                `Max depth reached, cannot address gap: ${topGap}`,
-                currentDepth
+                  30
+                )}...\". New estimated total steps: ${researchState.totalSteps}`
               );
-              this.progressUpdater.updateProgress(
-                // Send progress update
-                researchState,
-                "warning",
-                `Max depth reached, cannot address gap: ${topGap}`
+
+              // Add the new gap objects to the queue
+              researchState.researchQueue.push(...newGapObjects);
+
+              // Re-sort the entire queue by priority after adding new gaps
+              researchState.researchQueue.sort(
+                (a, b) => (b.priority ?? 0) - (a.priority ?? 0)
+              );
+            } else {
+              console.warn(
+                "Failed to generate targeted queries for gap. Moving to next item in queue."
               );
             }
           } else {
             this.progressUpdater.addLogEntry(
               "analyze",
               "warning",
-              `Max depth reached, cannot address gap: ${topGap}`,
+              `Max depth reached, cannot address gap: ${topNewGap.text}`,
               currentDepth
             );
             this.progressUpdater.updateProgress(
               // Send progress update
               researchState,
               "warning",
-              `Max depth reached, cannot address gap: ${topGap}`
+              `Max depth reached, cannot address gap: ${topNewGap.text}`
             );
           }
-        } else if (currentQuery) {
+        } else if (currentGap) {
+          // If gap analysis found the gap complete
           // Key question is complete (or no gaps identified), move to the next distinct key question.
           this.progressUpdater.addLogEntry(
             "analyze",
             "complete",
-            `Key question "${currentQuery.substring(
+            `Key question "${currentGap.text.substring(
               0,
               50
             )}..." marked as complete.`,
@@ -471,24 +506,26 @@ export class ResearchOrchestrator {
             // Send progress update
             researchState,
             "activity-delta",
-            `Key question "${currentQuery.substring(
+            `Key question "${currentGap.text.substring(
               0,
               50
             )}..." marked as complete.`
           );
         }
 
-        // Get next query for the *next* iteration
+        // Get next query for the *next* iteration (highest priority from sorted queue)
         if (researchState.researchQueue.length > 0) {
-          currentQuery = researchState.researchQueue.shift()!;
+          currentGap = researchState.researchQueue.shift()!; // Dequeue highest priority
           this.progressUpdater.addLogEntry(
             "thought",
             "pending",
-            `Next query in queue: "${currentQuery.substring(0, 50)}..."`,
+            `Next query in queue (Priority: ${currentGap.priority?.toFixed(
+              2
+            )}): "${currentGap.text.substring(0, 50)}..."`,
             currentDepth
           );
         } else {
-          currentQuery = undefined; // No more queries
+          currentGap = undefined; // No more gaps
           this.progressUpdater.addLogEntry(
             "thought",
             "complete",
@@ -497,7 +534,7 @@ export class ResearchOrchestrator {
           );
         }
 
-        if (!currentQuery) {
+        if (!currentGap) {
           this.progressUpdater.updateProgress(
             // Send progress update
             researchState,
@@ -564,9 +601,6 @@ export class ResearchOrchestrator {
         "Final report generated.",
         researchState.currentDepth
       );
-
-      // Set final totalSteps accurately BEFORE sending final update
-      researchState.totalSteps = researchState.completedSteps;
 
       this.progressUpdater.updateProgress(
         researchState,
@@ -643,8 +677,8 @@ export class ResearchOrchestrator {
    */
   private async retrieveAndCurateSources(
     query: string,
-    state: any
-  ): Promise<ResearchSearchResult[]> {
+    state: ResearchState
+  ): Promise<SearxngSearchResult[]> {
     this.progressUpdater.addLogEntry(
       "search",
       "pending",
@@ -657,34 +691,33 @@ export class ResearchOrchestrator {
       `Searching & Curating sources for: ${query.substring(0, 30)}...`
     );
 
-    // Check if we should use semantic variations for better coverage
-    let searchResults: ResearchSearchResult[] = [];
-
-    // If we have accumulated some insights, use them to enhance the search
-    if (state.allLearnings.length > 0 && state.currentDepth > 1) {
-      // Query variation generation removed, just use the current query
-      searchResults = await this.searchModule.searchWeb(query);
+    // Extract potential site: hints from the query itself
+    const hintedDomains =
+      query.match(/site:([\w.-]+)/g)?.map((s) => s.replace("site:", "")) ?? [];
+    if (hintedDomains.length > 0) {
       this.progressUpdater.addLogEntry(
         "search",
-        "complete",
-        `Performing standard search (depth ${state.currentDepth}). Found ${searchResults.length} initial results.`,
-        state.currentDepth
-      );
-      this.progressUpdater.updateProgress(
-        state,
-        "activity-delta",
-        `Performing standard search for depth ${state.currentDepth}.`
-      );
-    } else {
-      // Standard search with just the single query
-      searchResults = await this.searchModule.searchWeb(query);
-      this.progressUpdater.addLogEntry(
-        "search",
-        "complete",
-        `Performing initial search. Found ${searchResults.length} results.`,
+        "pending",
+        `Extracted domain hints from query: ${hintedDomains.join(", ")}`,
         state.currentDepth
       );
     }
+
+    let searchResults: SearxngSearchResult[] = [];
+
+    // Call searchWeb with the extracted hints
+    searchResults = await this.searchModule.searchWeb(
+      query,
+      15, // Default limit for searchWeb
+      hintedDomains // Pass extracted domains
+    );
+
+    this.progressUpdater.addLogEntry(
+      "search",
+      "complete",
+      `Initial search returned ${searchResults.length} results (including potential domain hints).`,
+      state.currentDepth
+    );
 
     // Track the sources
     searchResults.forEach((result) => {
@@ -747,8 +780,8 @@ export class ResearchOrchestrator {
    * @returns Promise with array of processed content
    */
   private async scrapeAndConvertContent(
-    sources: ResearchSearchResult[],
-    state: any,
+    sources: SearxngSearchResult[],
+    state: ResearchState,
     originalQuery: string // Receive originalQuery
   ): Promise<ScrapeResult[]> {
     this.progressUpdater.addLogEntry(
@@ -837,7 +870,7 @@ export class ResearchOrchestrator {
    */
   private async addDocumentsToVectorStore(
     scrapeResults: ScrapeResult[], // Accept ScrapeResult array
-    state: any
+    state: ResearchState // Update type
   ): Promise<number> {
     this.progressUpdater.addLogEntry(
       "vectorize",
@@ -962,7 +995,7 @@ export class ResearchOrchestrator {
   private async aggregateContextAndGenerateInsights(
     specificQuery: string,
     originalQuery: string, // Receive originalQuery
-    state: any
+    state: ResearchState // Update type
   ) {
     this.progressUpdater.addLogEntry(
       "synthesis",

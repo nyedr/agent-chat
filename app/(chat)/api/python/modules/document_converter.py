@@ -3,6 +3,7 @@ import requests
 import tempfile
 import logging
 from urllib.parse import urlparse, urlunparse
+import re
 
 from langchain_community.document_loaders import (
     PyMuPDFLoader, TextLoader, UnstructuredWordDocumentLoader,
@@ -38,11 +39,49 @@ def convert_document_from_url(url):
     try:
         logger.info(f"Processing document URL: {url}")
 
-        # 1. Download file
+        # --- Resilient Fetch Logic --- #
+        response = None
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; DeepResearchBot/1.0)'}
-        response = requests.get(url, headers=headers, stream=True, timeout=30)
-        response.raise_for_status()  # Check for download errors
+        primary_url = url
+        try:
+            logger.info(f"Attempting primary fetch: {primary_url}")
+            response = requests.get(
+                primary_url, headers=headers, stream=True, timeout=15)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as primary_error:
+            logger.warning(
+                f"Primary fetch failed for {primary_url}: {primary_error}")
+            # Attempt fallback for arXiv PDF links
+            arxiv_pdf_match = re.match(
+                r'(https?://arxiv\.org)/pdf/(.*?)(\.pdf)?$', primary_url, re.IGNORECASE)
+            if arxiv_pdf_match:
+                base_url, paper_id, _ = arxiv_pdf_match.groups()
+                # Try common HTML mirror patterns (ar5iv, openalex-like often use /html/)
+                fallback_urls = [
+                    f"{base_url}/html/{paper_id}",  # Common pattern
+                    # Add other known mirror patterns if needed
+                    # f"https://ar5iv.org/abs/{paper_id}" # Example if different domain
+                ]
+                for fallback_url in fallback_urls:
+                    try:
+                        logger.info(
+                            f"Attempting fallback fetch: {fallback_url}")
+                        response = requests.get(
+                            fallback_url, headers=headers, stream=True, timeout=15)
+                        response.raise_for_status()
+                        logger.info(
+                            f"Fallback fetch successful for: {fallback_url}")
+                        url = fallback_url  # Update the URL if fallback succeeded
+                        break  # Stop trying fallbacks
+                    except requests.exceptions.RequestException as fallback_error:
+                        logger.warning(
+                            f"Fallback fetch failed for {fallback_url}: {fallback_error}")
+                if not response or not response.ok:
+                    raise primary_error  # Re-raise original error if all fallbacks fail
+            else:
+                raise primary_error  # Re-raise if not arXiv or no fallback succeeded
+        # --- End Resilient Fetch Logic --- #
 
         # Determine file extension from URL or Content-Type
         parsed_url = urlparse(url)

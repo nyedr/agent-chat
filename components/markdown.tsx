@@ -6,6 +6,14 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { CodeBlock } from "./code-block";
 import { FilePreview } from "./file-preview";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
 
 interface ChatMarkdownProps extends Options {
   content: string;
@@ -192,6 +200,40 @@ export default function ChatMarkdown({
             className="my-0"
             {...props}
           />
+        );
+      },
+      table: ({ children }: any) => {
+        return (
+          <div className="my-6 w-full overflow-auto rounded-lg border border-border/60 shadow-sm">
+            <Table className="w-full my-0">{children}</Table>
+          </div>
+        );
+      },
+      thead: ({ children }: any) => {
+        return <TableHeader className="bg-muted/50">{children}</TableHeader>;
+      },
+      tbody: ({ children }: any) => {
+        return <TableBody>{children}</TableBody>;
+      },
+      tr: ({ children }: any) => {
+        return (
+          <TableRow
+            className={cn("transition-colors duration-200", "hover:bg-muted")}
+          >
+            {children}
+          </TableRow>
+        );
+      },
+      th: ({ children }: any) => {
+        return (
+          <TableHead className="font-semibold text-foreground py-3 px-4 text-left align-middle">
+            {children}
+          </TableHead>
+        );
+      },
+      td: ({ children }: any) => {
+        return (
+          <TableCell className="py-3 px-4 align-middle">{children}</TableCell>
         );
       },
     },

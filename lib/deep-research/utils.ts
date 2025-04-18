@@ -1,37 +1,5 @@
 import { normalizeUrl } from "../utils";
-import { ResearchSearchResult } from "./modules/search";
-
-/**
- * Curates a list of search results by removing duplicates and limiting the count.
- * Assumes the input `sources` are already sorted by relevance (e.g., by SearxNG).
- *
- * @param sources - Array of SearchResult objects from the search module
- * @param query - Original query string for relevance checking
- * @param maxResults - Maximum number of results to return
- * @returns Filtered array of SearchResult objects
- */
-export async function curateSources(
-  sources: ResearchSearchResult[],
-  query: string,
-  maxResults: number = 10
-): Promise<ResearchSearchResult[]> {
-  if (!sources || sources.length === 0) {
-    return [];
-  }
-
-  // Step 1: Remove duplicates (by URL normalization)
-  const uniqueSources = removeDuplicates(sources);
-  console.log(
-    `Deduplicated ${sources.length} sources down to ${uniqueSources.length} unique sources for query: "${query}"`
-  );
-
-  // Step 2: Slice the top N results (assuming input is sorted)
-  const finalResults = uniqueSources.slice(0, maxResults);
-
-  console.log(`Returning top ${finalResults.length} unique sources.`);
-
-  return finalResults;
-}
+import { SearxngSearchResult } from "../search/searxng";
 
 /**
  * Removes duplicate search results based on normalized URLs.
@@ -40,8 +8,8 @@ export async function curateSources(
  * @returns Array of unique SearchResult objects
  */
 export function removeDuplicates(
-  sources: ResearchSearchResult[]
-): ResearchSearchResult[] {
+  sources: SearxngSearchResult[]
+): SearxngSearchResult[] {
   const seenUrls = new Set<string>();
   return sources.filter((source) => {
     // Normalize URL for comparison (remove trailing slashes, etc.)
@@ -54,4 +22,119 @@ export function removeDuplicates(
     seenUrls.add(normalizedUrl);
     return true;
   });
+}
+
+export const QUALITY_DOMAINS = [
+  "arxiv.org",
+  "huggingface.co",
+  "doi.org",
+  "nih.gov",
+  "openreview.net",
+  "nature.com",
+  "sciencemag.org",
+  "plos.org",
+  "pubmed.ncbi.nlm.nih.gov",
+  "wikipedia.org",
+  "un.org",
+  "who.int",
+  "*.edu",
+  "*.gov",
+  // Add more general-purpose authoritative domains here
+];
+
+const DOMAIN_QUALITY: Record<"high" | "medium" | "low", RegExp[]> = {
+  high: [
+    // Matches domain or subdomain
+    /(\.|^)arxiv\.org$/,
+    /(\.|^)doi\.org$/,
+    /(\.|^)huggingface\.co$/,
+    /(\.|^)nih\.gov$/,
+    /(\.|^)openreview\.net$/,
+    /(\.|^)nature\.com$/,
+    /(\.|^)sciencemag\.org$/,
+    /(\.|^)plos\.org$/,
+    /(\.|^)pubmed\.ncbi\.nlm\.nih\.gov$/,
+    /(\.|^)wikipedia\.org$/,
+    /(\.|^)un\.org$/,
+    /(\.|^)who\.int$/,
+    /\.edu$/,
+    /\.gov$/,
+    // Add more high-quality patterns
+  ],
+  medium: [/(\.|^)medium\.com$/, /(\.|^)towardsdatascience\.com$/],
+  low: [/(\.|^)blogspot\.com$/, /(\.|^)pinterest\.com$/],
+};
+
+function scoreDomain(url: string): number {
+  try {
+    const { hostname } = new URL(url);
+    if (DOMAIN_QUALITY.high.some((r) => r.test(hostname))) return 3;
+    if (DOMAIN_QUALITY.low.some((r) => r.test(hostname))) return 0.5;
+    if (DOMAIN_QUALITY.medium.some((r) => r.test(hostname))) return 1;
+  } catch (e) {
+    console.warn(`[scoreDomain] Failed to parse URL: ${url}`, e);
+  }
+  return 1.2;
+}
+
+/**
+ * Curates search results, removing duplicates and irrelevant content.
+ *
+ * @param searchResults - Raw search results
+ * @param query - Original search query (for relevance check)
+ * @param maxResults - Maximum number of results to return
+ * @returns Curated list of search results
+ */
+export function curateSources(
+  searchResults: SearxngSearchResult[],
+  query: string,
+  maxResults: number
+): SearxngSearchResult[] {
+  if (!searchResults || searchResults.length === 0) {
+    return [];
+  }
+
+  const seenUrls = new Set<string>();
+  const uniqueSources: SearxngSearchResult[] = [];
+
+  for (const result of searchResults) {
+    if (!result.url || seenUrls.has(result.url)) {
+      continue;
+    }
+    // Basic relevance check (can be expanded)
+    const titleLower = (result.title || "").toLowerCase();
+    const contentLower = (result.content || "").toLowerCase();
+    const queryLower = query.toLowerCase();
+    // Simple keyword check - consider more advanced NLP later
+    const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2); // Ignore short words
+    const isRelevant = queryWords.some(
+      (word) => titleLower.includes(word) || contentLower.includes(word)
+    );
+
+    // Added basic relevance check
+    if (isRelevant) {
+      seenUrls.add(result.url);
+      uniqueSources.push(result);
+    }
+  }
+
+  // Sort by domain quality score (desc), then by SearxNG score (desc)
+  const scored = uniqueSources
+    .map((r) => ({
+      result: r,
+      domainScore: scoreDomain(r.url),
+      searchScore: r.score ?? 0, // Use SearxNG score if available
+    }))
+    .sort((a, b) => {
+      // Primary sort: Domain Score (higher is better)
+      if (b.domainScore !== a.domainScore) {
+        return b.domainScore - a.domainScore;
+      }
+      // Secondary sort: SearxNG Score (higher is better)
+      return b.searchScore - a.searchScore;
+    })
+    .slice(0, maxResults)
+    .map((o) => o.result);
+
+  return scored;
 }

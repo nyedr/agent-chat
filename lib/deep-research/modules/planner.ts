@@ -4,7 +4,8 @@ import { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 
 import { SearchModule } from "./search";
 import { ModelsByCapability } from "../../ai/models";
-import type { ResearchLogEntry, ReportPlan } from "../types";
+import type { ResearchLogEntry, ReportPlan, ResearchState } from "../types";
+import type { ProgressEventType } from "./progress-updater";
 
 const ReportPlanSectionSchema = z.object({
   title: z.string().min(1, "Section title cannot be empty"),
@@ -28,7 +29,11 @@ interface PlannerDependencies {
     message: string,
     depth?: number
   ) => void;
-  updateProgress: (state: any, type: string, message: string) => void; // Or use a dedicated ProgressUpdater class/functions
+  updateProgress: (
+    state: ResearchState,
+    type: ProgressEventType,
+    message: string
+  ) => void;
 }
 
 /**

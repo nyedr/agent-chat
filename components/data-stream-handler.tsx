@@ -39,7 +39,11 @@ export type DataStreamDelta = {
     | "shell-stdout-delta"
     | "shell-stderr-delta";
   content: string | any;
+  id?: string;
 };
+
+// Store seen event IDs outside the component to persist across renders
+const seenEventIds = new Set<string>();
 
 export function DataStreamHandler({ id }: { id: string }) {
   const { data: dataStream } = useChat({ id });
@@ -63,6 +67,22 @@ export function DataStreamHandler({ id }: { id: string }) {
 
     (newDeltas as DataStreamDelta[]).forEach((delta: DataStreamDelta) => {
       console.log("[DataStreamHandler] Processing delta:", delta); // Log every delta
+
+      // --- Deduplication Check ---
+      if (delta.id && seenEventIds.has(delta.id)) {
+        console.log("[DataStreamHandler] Skipping duplicate delta:", delta.id);
+        return; // Skip processing this delta
+      }
+      if (delta.id) {
+        seenEventIds.add(delta.id);
+        // Optional: Clean up old IDs periodically if memory becomes an issue
+        if (seenEventIds.size > 1000) {
+          // Example cleanup threshold
+          const oldestIds = Array.from(seenEventIds).slice(0, 200);
+          oldestIds.forEach((idToRemove) => seenEventIds.delete(idToRemove));
+        }
+      }
+      // --- End Deduplication Check ---
 
       // Stop processing deep research deltas if completion signal received
       if (

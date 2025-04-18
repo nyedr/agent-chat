@@ -295,7 +295,7 @@ function PureMultimodalInput({
                           value={input}
                           onChange={(e) => setInput(e.target.value)}
                           className={cn(
-                            "max-h-[calc(75dvh)] overflow-y-auto resize-none !border-0 !shadow-none !bg-transparent !p-0 !py-2 !rounded-none !text-base",
+                            "h-[116px] overflow-y-auto resize-none !border-0 !shadow-none !bg-transparent !p-0 !py-2 !rounded-none !text-base",
                             className
                           )}
                           minHeight={24}

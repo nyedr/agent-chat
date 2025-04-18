@@ -1,9 +1,14 @@
 import { motion } from "framer-motion";
-import { cn, getFaviconUrl } from "@/lib/utils";
+import {
+  calculateProgressPercentage,
+  cn,
+  formatTime,
+  getFaviconUrl,
+} from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FileSearch,
   Bot,
@@ -15,8 +20,21 @@ import {
   DraftingCompass,
   SearchCheck,
   FileText,
+  Clock,
+  Layers,
+  Search,
+  Zap,
 } from "lucide-react";
+import {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "./ui/tooltip";
 import { ResearchLogEntry } from "@/lib/deep-research/types";
+import { Progress } from "./ui/progress";
+import { useDeepResearch } from "@/lib/deep-research-context";
+import { Badge } from "./ui/badge";
 
 interface Source {
   url: string;
@@ -225,3 +243,165 @@ export function DeepResearch({
     </div>
   );
 }
+
+const MAX_RESEARCH_DURATION = process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION
+  ? parseInt(process.env.NEXT_PUBLIC_MAX_RESEARCH_DURATION)
+  : 10;
+
+export const DeepResearchProgress = () => {
+  const { state: deepResearchState } = useDeepResearch();
+
+  const progress = useMemo(
+    () =>
+      calculateProgressPercentage(
+        deepResearchState.completedSteps,
+        deepResearchState.totalExpectedSteps
+      ),
+    [deepResearchState.completedSteps, deepResearchState.totalExpectedSteps]
+  );
+
+  const [startTime] = useState<number>(Date.now());
+  const maxDuration = MAX_RESEARCH_DURATION * 60 * 1000;
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const elapsed = useMemo(
+    () => Math.min(currentTime - startTime, maxDuration),
+    [currentTime, startTime, maxDuration]
+  );
+  const formattedTimeElapsed = formatTime(elapsed);
+  const formattedMaxDuration = formatTime(maxDuration);
+  const timeProgress = useMemo(
+    () => (elapsed / maxDuration) * 100,
+    [elapsed, maxDuration]
+  );
+  const timeRemaining = formatTime(Math.max(0, maxDuration - elapsed));
+
+  const currentActivity =
+    deepResearchState.activity.length > 0
+      ? deepResearchState.activity[deepResearchState.activity.length - 1]
+          .message
+      : "Initializing research...";
+
+  const getStatusColor = () => {
+    if (progress < 25) return "text-blue-500";
+    if (progress < 50) return "text-amber-500";
+    if (progress < 75) return "text-orange-500";
+    return "text-green-500";
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="w-full space-y-4 rounded-xl border p-5 text-card-foreground shadow-md"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{
+              duration: 2,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "linear",
+            }}
+            className="flex items-center justify-center rounded-full bg-primary/10 p-1.5"
+          >
+            <Search className="size-4 text-primary" />
+          </motion.div>
+          <span className="font-semibold text-foreground">
+            Research in Progress
+          </span>
+          <Badge variant="outline" className={`ml-2 ${getStatusColor()}`}>
+            {progress < 25
+              ? "Starting"
+              : progress < 50
+              ? "Gathering"
+              : progress < 75
+              ? "Analyzing"
+              : "Finalizing"}
+          </Badge>
+        </div>
+
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="size-3.5 text-primary" />
+                  <span>
+                    {deepResearchState.currentDepth}/
+                    {deepResearchState.maxDepth}
+                  </span>
+                </div>
+                <div className="h-3 w-px bg-border" />
+                <div className="flex items-center gap-1.5">
+                  <Zap className="size-3.5 text-primary" />
+                  <span>
+                    {deepResearchState.completedSteps}/
+                    {deepResearchState.totalExpectedSteps}
+                  </span>
+                </div>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Current depth and completed steps</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground">Overall Progress</span>
+          <span className="font-medium">{Math.round(progress)}%</span>
+        </div>
+        <Progress max={100} value={progress} className="h-2.5 w-full" />
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <Clock className="size-3.5" />
+            <span>Time Remaining: {timeRemaining}</span>
+          </div>
+          <span className="font-medium text-xs">
+            {formattedTimeElapsed} / {formattedMaxDuration}
+          </span>
+        </div>
+        <Progress max={100} value={timeProgress} className="h-1.5 w-full" />
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-3">
+        <div className="mb-1.5 flex items-center gap-2">
+          <div className="size-2 animate-pulse rounded-full bg-primary" />
+          <span className="text-xs font-medium">Current Activity</span>
+        </div>
+        <p className="text-sm text-muted-foreground">{currentActivity}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+        {deepResearchState.activity.slice(-3).map((activity, index) => (
+          <motion.div
+            key={index}
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            className="rounded-md border border-border/50 bg-background p-2"
+          >
+            <span className="line-clamp-2 text-muted-foreground">
+              {activity.message.split(" ").slice(0, 5).join(" ")}...
+            </span>
+          </motion.div>
+        ))}
+      </div>
+    </motion.div>
+  );
+};
