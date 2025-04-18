@@ -125,16 +125,16 @@ def rerank_documents():
 
 @app.route('/api/python/scrape-process', methods=['POST'])
 def scrape_process_urls():
-    """Scrape and process URLs with optional relevance chunking"""
+    """Scrape and process URLs, handling PDFs directly and others via ScraperProcessor."""
     try:
         data = request.get_json()
         urls = data.get('urls')
         query = data.get('query')
         extract_top_k_chunks = data.get('extract_top_k_chunks')
-        # Get crawling strategy from request, default to 'http'
-        crawling_strategy = data.get('crawling_strategy', 'http')
+        crawling_strategy = data.get(
+            'crawling_strategy', 'http')  # Default remains http
 
-        # --- Validation --- (Includes strategy validation)
+        # --- Validation ---
         if not urls or not isinstance(urls, list):
             return jsonify({"error": "'urls' (array of strings) is required."}), 400
         if query and not isinstance(query, str):
@@ -147,26 +147,130 @@ def scrape_process_urls():
             return jsonify({"error": "Invalid 'crawling_strategy'. Must be 'http' or 'playwright'."}), 400
 
         logger.info(
-            f"Received scrape-process request for {len(urls)} URLs. Strategy: {crawling_strategy}. Query: '{query[:50] if query else 'N/A'}...' Chunking: {extract_top_k_chunks}"
+            f"Received scrape-process request for {len(urls)} URLs. Strategy for non-PDFs: {crawling_strategy}. Query: '{query[:50] if query else 'N/A'}...' Chunking: {extract_top_k_chunks}"
         )
 
-        # Scrape URLs using the ScraperProcessor, passing the strategy
-        scrape_results_dict = asyncio.run(
-            scraper_processor.scrape_urls(urls, query, crawling_strategy))
+        # --- Separate URLs and Process ---
+        pdf_urls = []
+        other_urls = []
+        for url in urls:
+            if url and isinstance(url, str) and url.lower().strip().endswith('.pdf'):
+                pdf_urls.append(url)
+            else:
+                other_urls.append(url)
 
-        # Convert dict to list for the response
-        final_results_list = list(scrape_results_dict.values())
+        all_results_dict = {}
 
-        # Implement relevance chunking if requested
-        if query and extract_top_k_chunks and any(r.get("success") and r.get("processed_content") for r in final_results_list):
+        # Process PDFs directly
+        if pdf_urls:
+            logger.info(f"Processing {len(pdf_urls)} PDF URLs directly...")
+            for pdf_url in pdf_urls:
+                try:
+                    # Call the direct PDF converter
+                    conversion_result = convert_document_from_url(pdf_url)
+
+                    if isinstance(conversion_result, tuple):  # Error case
+                        response_dict, status_code = conversion_result
+                        error_message = response_dict.get(
+                            'error', f'Direct PDF conversion failed with status {status_code}')
+                        logger.warning(
+                            f"Failed to convert PDF {pdf_url}: {error_message}")
+                        all_results_dict[pdf_url] = {
+                            "url": pdf_url,
+                            "success": False,
+                            "processed_content": None,
+                            "title": None,
+                            "error": error_message,
+                            "quality_score": None,  # No quality score applicable here
+                            "relevant_chunks": None
+                        }
+                    else:  # Success case
+                        logger.info(f"Successfully converted PDF {pdf_url}")
+                        all_results_dict[pdf_url] = {
+                            "url": pdf_url,
+                            "success": True,
+                            "processed_content": conversion_result.get('text'),
+                            "title": conversion_result.get('title'),
+                            "error": None,
+                            "quality_score": 1.0,  # Assume high quality for direct conversion
+                            "relevant_chunks": None
+                        }
+                except Exception as pdf_err:
+                    logger.error(
+                        f"Exception during direct PDF conversion for {pdf_url}: {pdf_err}", exc_info=True)
+                    all_results_dict[pdf_url] = {
+                        "url": pdf_url,
+                        "success": False,
+                        "processed_content": None,
+                        "title": None,
+                        "error": f"Server error during PDF conversion: {str(pdf_err)}",
+                        "quality_score": None,
+                        "relevant_chunks": None
+                    }
+
+        # Process other URLs using ScraperProcessor
+        if other_urls:
             logger.info(
-                f"Performing relevance chunking for top {extract_top_k_chunks} chunks...")
+                f"Processing {len(other_urls)} non-PDF URLs using ScraperProcessor (strategy: {crawling_strategy})...")
+            try:
+                scrape_results_dict = asyncio.run(
+                    scraper_processor.scrape_urls(other_urls, query, crawling_strategy))
+                # Ensure structure consistency (add None for missing fields if necessary)
+                for url, result in scrape_results_dict.items():
+                    if "quality_score" not in result:
+                        result["quality_score"] = None
+                    if "relevant_chunks" not in result:
+                        result["relevant_chunks"] = None
+                    if "processed_content" not in result:
+                        result["processed_content"] = None
+                    if "title" not in result:
+                        result["title"] = None
+                    if "error" not in result:
+                        result["error"] = None
+
+                all_results_dict.update(scrape_results_dict)
+            except Exception as scrape_err:
+                logger.error(
+                    f"Exception during ScraperProcessor execution for non-PDF URLs: {scrape_err}", exc_info=True)
+                # Add error entries for all non-PDF URLs if the batch fails
+                for url in other_urls:
+                    if url not in all_results_dict:  # Avoid overwriting individual PDF errors
+                        all_results_dict[url] = {
+                            "url": url,
+                            "success": False,
+                            "processed_content": None,
+                            "title": None,
+                            "error": f"Scraping batch failed: {str(scrape_err)}",
+                            "quality_score": None,
+                            "relevant_chunks": None
+                        }
+
+        # Reorder results to match original input order
+        ordered_results = [all_results_dict.get(
+            url) for url in urls if all_results_dict.get(url)]
+        # Add placeholders for any URLs that somehow didn't get processed (shouldn't happen)
+        processed_urls = {res['url'] for res in ordered_results}
+        for url in urls:
+            if url not in processed_urls:
+                logger.error(
+                    f"URL {url} was in the input but missing from final results dict!")
+                # Optionally add a placeholder error result if needed
+
+        # Implement relevance chunking if requested (operates on the ordered combined results)
+        if query and extract_top_k_chunks and any(r.get("success") and r.get("processed_content") for r in ordered_results):
+            logger.info(
+                f"Performing relevance chunking for top {extract_top_k_chunks} chunks on combined results..."
+            )
             try:
                 # Embed the query once
                 query_embedding = np.array(
                     embedding_service.generate_embeddings([query])[0])
 
-                for result in final_results_list:
+                for result in ordered_results:
+                    # Ensure relevant_chunks field exists
+                    if "relevant_chunks" not in result:
+                        result["relevant_chunks"] = None
+
                     if result.get("success") and result.get("processed_content"):
                         content = result["processed_content"]
                         try:
@@ -176,7 +280,6 @@ def scrape_process_urls():
                                     embedding_service.generate_embeddings(chunks))
 
                                 # Calculate cosine similarities
-                                # Ensure embeddings are numpy arrays for dot product
                                 similarities = np.dot(chunk_embeddings, query_embedding) / \
                                     (np.linalg.norm(chunk_embeddings, axis=1)
                                      * np.linalg.norm(query_embedding))
@@ -185,37 +288,28 @@ def scrape_process_urls():
                                 top_k_indices = np.argsort(
                                     similarities)[-extract_top_k_chunks:][::-1]
 
-                                # Store top chunks (consider storing scores too if needed)
                                 result["relevant_chunks"] = [chunks[i]
                                                              for i in top_k_indices]
-                                # logger.debug(f"Top {extract_top_k_chunks} chunks extracted for {result['url']}")
                             else:
                                 # No chunks generated
                                 result["relevant_chunks"] = []
                                 logger.warning(
-                                    f"No chunks generated for {result['url']}")
+                                    f"No chunks generated for {result['url']} during relevance chunking.")
                         except Exception as chunking_err:
                             logger.error(
-                                f"Error during chunking/embedding for {result['url']}: {chunking_err}", exc_info=True)
+                                f"Error during relevance chunking/embedding for {result['url']}: {chunking_err}", exc_info=True)
                             result["relevant_chunks"] = None  # Indicate error
-                    else:
-                        # Ensure field exists even if not processed
-                        result["relevant_chunks"] = None
 
             except Exception as embedding_err:
                 logger.error(
                     f"Error embedding query or chunks during relevance selection: {embedding_err}", exc_info=True)
                 # Set relevant_chunks to None for all results if query embedding fails
-                for res in final_results_list:
-                    res["relevant_chunks"] = None
-        else:
-            # Ensure field exists if chunking is not performed
-            for res in final_results_list:
-                if "relevant_chunks" not in res:
+                for res in ordered_results:
                     res["relevant_chunks"] = None
 
         logger.info(f"Finished scrape-process request for {len(urls)} URLs.")
-        return jsonify({"results": final_results_list})
+        # Return the ordered results
+        return jsonify({"results": ordered_results})
 
     except Exception as e:
         logger.error(
