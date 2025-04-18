@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn, removeInlineTicks, getRelativePath } from "@/lib/utils";
-import Markdown, { Options } from "react-markdown";
+import Markdown, { Components, Options } from "react-markdown";
 import { Image } from "@lobehub/ui";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -23,6 +23,7 @@ interface ChatMarkdownProps extends Options {
 export default function ChatMarkdown({
   content,
   isUserMessage = false,
+  components,
   ...props
 }: ChatMarkdownProps) {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -236,12 +237,10 @@ export default function ChatMarkdown({
           <TableCell className="py-3 px-4 align-middle">{children}</TableCell>
         );
       },
+      ...components,
     },
+    ...props,
   };
 
-  return (
-    <Markdown {...markdownComponentProps} {...props}>
-      {content}
-    </Markdown>
-  );
+  return <Markdown {...markdownComponentProps}>{content}</Markdown>;
 }

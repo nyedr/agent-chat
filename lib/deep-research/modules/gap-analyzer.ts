@@ -87,30 +87,36 @@ export async function analyzeKnowledgeGaps(
   );
 
   if (latestLearnings.length === 0) {
-    addLogEntry(
-      "analyze",
-      "warning",
-      `No learnings to analyze for gap assessment of "${keyQuestion}".`,
-      state.currentDepth
-    );
-    updateProgress(
-      state,
-      "warning",
-      `No learnings to analyze for gap assessment.`
-    );
-    return {
-      is_complete: false,
-      remaining_gaps: [
-        {
-          text: `Re-evaluate findings for "${keyQuestion}"`,
-          severity: 3 as 1 | 2 | 3,
-          confidence: 0.5,
-        } as Gap,
-      ],
-    };
+    if (state.allLearnings.length === 0) {
+      addLogEntry(
+        "analyze",
+        "warning",
+        `No learnings to analyze for gap assessment of "${keyQuestion}".`,
+        state.currentDepth
+      );
+      updateProgress(
+        state,
+        "warning",
+        `No learnings to analyze for gap assessment.`
+      );
+      return {
+        is_complete: false,
+        remaining_gaps: [
+          {
+            text: `Re-evaluate findings for "${keyQuestion}"`,
+            severity: 3 as 1 | 2 | 3,
+            confidence: 0.5,
+          } as Gap,
+        ],
+      };
+    }
   }
 
-  const learningsContext = latestLearnings
+  const cumulativeLearnings = [...state.allLearnings, ...latestLearnings];
+  const maxContextLearnings = 40; // Limit context size
+  const relevantLearnings = cumulativeLearnings.slice(-maxContextLearnings);
+
+  const learningsContext = relevantLearnings
     .map((l, i) => `[L${i + 1}] ${l.text} (Source: ${l.source || "N/A"})`)
     .join("\n");
 

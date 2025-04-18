@@ -5,22 +5,6 @@ import { ModelsByCapability, myProvider } from "../ai/models";
 import { ResearchOrchestrator, ResearchResult } from "./research-orchestrator";
 import { WorkflowConfig, ResearchOptions, ResearchLogEntry } from "./types";
 
-// Example input updated to include objectives, deliverables, and extract_top_k_chunks:
-// {
-//   "topic": "Quantization of Large Language Models",
-//   "objectives": [
-//     "Summarise INT8, INT4, and emerging NF4/FP8 techniques",
-//     "Provide quantitative benchmarks (accuracy, latency, memory) for at least 3 open LLMs (e.g., Llama‑2‑7B, GPT‑J, BLOOM)",
-//     "Discuss trade‑offs and mitigation strategies"
-//   ],
-//   "deliverables": [
-//     "≤200‑word executive summary",
-//     "One comparative table of benchmark metrics",
-//     "Proper APA‑style references (peer‑reviewed preferred)"
-//   ],
-//   "extract_top_k_chunks": 10
-// }
-
 /**
  * Props for creating a deep research tool
  */
@@ -58,6 +42,16 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
     description: "Conduct multi-step, citation-aware deep research on a topic",
     parameters: z.object({
       topic: z.string().describe("The topic or question to research"),
+      objectives: z
+        .array(z.string())
+        .nonempty()
+        .optional()
+        .describe("What the user explicitly wants to learn / cover"),
+      deliverables: z
+        .array(z.string())
+        .nonempty()
+        .optional()
+        .describe("Concrete output formats the user expects"),
       extract_top_k_chunks: z
         .number()
         .int()
@@ -67,6 +61,8 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
     }),
     execute: async ({
       topic,
+      objectives = [],
+      deliverables = [],
       extract_top_k_chunks = 5,
     }): Promise<DeepResearchToolResult> => {
       const maxDepth = 7;
@@ -84,6 +80,8 @@ export const deepResearch = ({ dataStream, models }: DeepResearchToolProps) =>
 
         const options: ResearchOptions = {
           extract_top_k_chunks,
+          objectives,
+          deliverables,
         };
 
         orchestrator = new ResearchOrchestrator(

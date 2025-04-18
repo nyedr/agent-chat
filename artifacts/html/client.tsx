@@ -2,7 +2,7 @@ import { Artifact, ArtifactContent } from "@/components/create-artifact";
 import { CodeEditor, EditorProps } from "@/components/code-editor";
 import { CopyIcon, MessageIcon, RedoIcon, UndoIcon } from "@/components/icons";
 import { toast } from "sonner";
-import React, { useState } from "react";
+import React from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent } from "@/components/ui/tabs";

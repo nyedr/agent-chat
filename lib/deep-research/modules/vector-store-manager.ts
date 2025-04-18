@@ -182,7 +182,7 @@ export class VectorStoreManager {
    */
   constructor(fetchImplementation: typeof fetch = fetch) {
     this.vectorStore = new InMemoryVectorStore();
-    this.textSplitter = new SimpleTextSplitter(1000, 200);
+    this.textSplitter = new SimpleTextSplitter(450, 100);
     this.embeddingEndpoint =
       (process.env.PYTHON_SERVER_URL || "http://localhost:5328") +
       "/api/python/embed";

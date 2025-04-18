@@ -153,10 +153,14 @@ export async function POST(request: Request) {
         maxFinalResults,
       });
 
+      const availableTools = experimental_deepResearch
+        ? deepResearchTools
+        : allTools;
+
       const result = streamText({
         model: myProvider.chatModel(modelId),
         system: systemPrompt({
-          tools: experimental_deepResearch ? deepResearchTools : allTools,
+          tools: availableTools,
           documents: currentDocuments,
           uploadedFiles: currentUploadedFiles,
           context: extractedContextFromUserMessage?.context,
@@ -171,9 +175,7 @@ export async function POST(request: Request) {
         maxSteps: experimental_deepResearch ? 2 : 15,
         experimental_transform: smoothStream({ chunking: "word" }),
         experimental_generateMessageId: generateUUID,
-        experimental_activeTools: experimental_deepResearch
-          ? deepResearchTools
-          : allTools,
+        experimental_activeTools: availableTools,
         tools,
         onFinish: async ({ response }) => {
           try {

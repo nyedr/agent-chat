@@ -60,7 +60,7 @@ export function MessageEditor({
     <div className="flex flex-col gap-2 w-full">
       <Textarea
         ref={textareaRef}
-        className="bg-transparent outline-none overflow-hidden resize-none !text-base rounded-xl w-full"
+        className="bg-muted outline-none border-none rounded-xl resize-none max-h-[200px] overflow-y-auto w-full"
         value={draftContent}
         onChange={handleInput}
       />

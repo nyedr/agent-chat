@@ -25,6 +25,7 @@ import {
   analyzeKnowledgeGaps,
   generateTargetedQueries,
 } from "./modules/gap-analyzer";
+import { rerankDocuments } from "../../app/(chat)/actions";
 
 /**
  * Final research result.
@@ -41,7 +42,7 @@ export interface ResearchResult {
   };
   completedSteps: number;
   totalSteps: number;
-  logs: ResearchLogEntry[]; // Added logs
+  logs: ResearchLogEntry[];
 }
 
 // Constants for step calculation
@@ -59,10 +60,10 @@ export class ResearchOrchestrator {
   private insightModule: InsightGeneratorModule;
   private reportModule: ReportGeneratorModule;
   private dataStream: DataStreamWriter | null;
-  private llmProvider: OpenAICompatibleProvider<string, string, string>; // Store LLM provider for potential usage
-  private models: ModelsByCapability; // Store model ID for potential usage
-  private options: ResearchOptions; // Store research options
-  private progressUpdater: ProgressUpdater; // Add ProgressUpdater instance
+  private llmProvider: OpenAICompatibleProvider<string, string, string>;
+  private models: ModelsByCapability;
+  private options: ResearchOptions;
+  private progressUpdater: ProgressUpdater;
 
   /**
    * @param llmProvider - Provider for accessing LLM capabilities
@@ -74,13 +75,13 @@ export class ResearchOrchestrator {
     llmProvider: OpenAICompatibleProvider<string, string, string>,
     models: ModelsByCapability,
     dataStream: DataStreamWriter | null = null,
-    options: ResearchOptions = {} // Add options parameter
+    options: ResearchOptions = {}
   ) {
     // Store LLM provider and model ID
     this.llmProvider = llmProvider;
     this.models = models;
     this.dataStream = dataStream;
-    this.options = options; // Store options
+    this.options = options;
 
     this.searchModule = new SearchModule();
     this.scraperModule = new ContentScraperModule();
@@ -97,7 +98,8 @@ export class ResearchOrchestrator {
 
     this.reportModule = new ReportGeneratorModule(
       llmProvider,
-      models.reasoning
+      models.reasoning,
+      options.deliverables ?? []
     );
 
     // Instantiate ProgressUpdater
@@ -131,63 +133,98 @@ export class ResearchOrchestrator {
     const startTime = Date.now();
     const timeLimit = config.timeout || 4.5 * 60 * 1000;
 
-    const researchState = {
+    const researchState: ResearchState = {
       allSources: {} as Record<string, string>,
-      allLearnings: [] as Learning[], // Structured learnings with citations
+      allLearnings: [] as Learning[],
       currentDepth: 0,
       maxDepth: config.maxDepth,
       completedSteps: 0,
       totalSteps: 0,
       shouldContinue: true,
       researchQueue: [] as Gap[],
-      originalQuery: query, // Store the original query
-      reportPlan: null as ReportPlan | null, // Add reportPlan state
+      originalQuery: query,
+      reportPlan: null as ReportPlan | null,
+      objectives: this.options.objectives ?? [],
+      deliverables: this.options.deliverables ?? [],
     };
 
     // Function to calculate priority (can be customized)
+    const objectiveSet = new Set(
+      (this.options.objectives ?? []).map((o) => o.toLowerCase())
+    );
     const calculatePriority = (gap: Gap): number => {
       // Estimate effort loosely based on gap text length (longer might require more specific search)
       const estimatedEffort = Math.max(1, gap.text.length / 50); // Arbitrary scaling, avoid division by zero
       // Priority = (Severity * Confidence) / Estimated Effort
       // Higher severity/confidence increase priority, longer text (higher effort) decreases it slightly
-      const priority = (gap.severity * gap.confidence) / estimatedEffort;
+      const basePriority = (gap.severity * gap.confidence) / estimatedEffort;
       // Clamp priority to avoid extreme values, e.g., 0 to 10
-      return Math.max(0, Math.min(priority, 10));
+      const clampedBase = Math.max(0, Math.min(basePriority, 10));
+      // Boost priority if the gap text matches a user objective
+      const boost = objectiveSet.has(gap.text.toLowerCase()) ? 5 : 0;
+      return clampedBase + boost;
     };
 
     try {
       // --- Phase 0: Planning ---
-      const reportPlan = await planInitialResearch(query, researchState, {
-        llmProvider: this.llmProvider,
-        models: this.models,
-        searchModule: this.searchModule,
-        addLogEntry: this.progressUpdater.addLogEntry.bind(
-          this.progressUpdater
-        ), // Bind context
-        updateProgress: this.progressUpdater.updateProgress.bind(
-          this.progressUpdater
-        ), // Bind context
-      });
-      researchState.reportPlan = reportPlan; // Store the plan
-      researchState.completedSteps += PLANNING_STEP; // credit the planning work
-      // Initialize queue with KEY QUESTIONS from the plan as Gap objects
-      researchState.researchQueue = reportPlan.report_outline.map(
-        (section): Gap => ({
-          text: section.key_question,
-          severity: 3, // Initial key questions are high severity
-          confidence: 0.8, // Reasonably confident search can find info
-        })
+      const reportPlan = await planInitialResearch(
+        query,
+        researchState,
+        {
+          llmProvider: this.llmProvider,
+          models: this.models,
+          searchModule: this.searchModule,
+          addLogEntry: this.progressUpdater.addLogEntry.bind(
+            this.progressUpdater
+          ),
+          updateProgress: this.progressUpdater.updateProgress.bind(
+            this.progressUpdater
+          ),
+        },
+        this.options.objectives,
+        this.options.deliverables
       );
-      // Calculate initial priorities and sort
+      researchState.reportPlan = reportPlan;
+      researchState.completedSteps += PLANNING_STEP;
+
+      // Initialize queue: objectives first, then LLM key questions
+      researchState.researchQueue = [
+        ...(this.options.objectives ?? []).map(
+          (o): Gap => ({
+            text: o,
+            severity: 3, // High severity for explicit objectives
+            confidence: 0.9, // High confidence we should address it
+          })
+        ),
+        ...reportPlan.report_outline.map(
+          (section): Gap => ({
+            text: section.key_question,
+            severity: 3, // Also high severity
+            confidence: 0.8,
+          })
+        ),
+      ];
+
+      // Deduplicate queue based on lowercased text
+      const uniqueGaps = new Map<string, Gap>();
+      researchState.researchQueue.forEach((gap) => {
+        const key = gap.text.toLowerCase();
+        if (!uniqueGaps.has(key)) {
+          uniqueGaps.set(key, gap);
+        }
+      });
+      researchState.researchQueue = Array.from(uniqueGaps.values());
+
+      // Calculate and assign priority to all gaps
       researchState.researchQueue.forEach(
         (gap) => (gap.priority = calculatePriority(gap))
       );
+      // Sort the combined queue by priority
       researchState.researchQueue.sort(
         (a, b) => (b.priority ?? 0) - (a.priority ?? 0)
       );
 
-      // Determine the first query to process
-      let currentGap: Gap | undefined = researchState.researchQueue.shift(); // Get highest priority Gap
+      let currentGap: Gap | undefined = researchState.researchQueue.shift();
 
       if (!currentGap) {
         this.progressUpdater.addLogEntry(
@@ -199,17 +236,15 @@ export class ResearchOrchestrator {
         console.warn(
           "Planning resulted in no key questions. Using original query."
         );
-        // Create a fallback Gap for the original query
         currentGap = { text: query, severity: 3, confidence: 0.8 };
         currentGap.priority = calculatePriority(currentGap);
       }
 
-      // Calculate initial total steps (NOW we have the queue size)
       this.progressUpdater.updateProgressInit(
         researchState,
-        BASE_STEPS_PER_ITERATION, // Use constant
-        PLANNING_STEP, // Use constant
-        FINAL_REPORT_STEPS // Use constant
+        BASE_STEPS_PER_ITERATION,
+        PLANNING_STEP,
+        FINAL_REPORT_STEPS
       );
 
       // Update progress AFTER init which sets the total steps
@@ -584,15 +619,15 @@ export class ResearchOrchestrator {
         researchState.currentDepth
       );
       this.progressUpdater.updateProgress(
-        // Send progress update
         researchState,
         "activity-delta",
         "Generating final report..."
       );
       const finalReport = await this.reportModule.generateFinalReport(
         researchState.allLearnings,
-        researchState.originalQuery, // Pass original query
-        researchState.reportPlan // Pass the generated plan
+        researchState.originalQuery,
+        researchState.reportPlan,
+        researchState.objectives
       );
       researchState.completedSteps++;
       this.progressUpdater.addLogEntry(
@@ -621,7 +656,7 @@ export class ResearchOrchestrator {
           sourcesExamined: Object.keys(researchState.allSources).length,
         },
         completedSteps: researchState.completedSteps,
-        totalSteps: researchState.totalSteps, // Use final accurate total
+        totalSteps: researchState.totalSteps,
         logs: this.progressUpdater.logs,
       };
       return result;
@@ -656,7 +691,7 @@ export class ResearchOrchestrator {
           sourcesExamined: Object.keys(researchState.allSources).length,
         },
         completedSteps: researchState.completedSteps,
-        totalSteps: researchState.totalSteps, // Use final calculated total
+        totalSteps: researchState.totalSteps,
         logs: this.progressUpdater.logs,
       };
       return errorResult;
@@ -732,13 +767,64 @@ export class ResearchOrchestrator {
     this.progressUpdater.addLogEntry(
       "search",
       "pending",
-      `Curating top ${maxResults} sources...`,
+      `Reranking initial ${searchResults.length} sources...`,
       state.currentDepth
     );
+
+    // 1. Prepare documents for reranker (needs id and text)
+    const docsToRerank = searchResults.map((r, index) => ({
+      id: r.url || `doc-${index}`, // Use URL as ID, fallback to index
+      text: `${r.title || ""}\n${r.content || r.title || r.url || ""}`, // Combine title and content (if available) or just title/url for context
+    }));
+
+    // 2. Call the reranker
+    let rerankedDocsResult: { id: string; text: string; score: number }[] = [];
+    try {
+      const rerankResponse = await rerankDocuments(
+        query,
+        docsToRerank,
+        searchResults.length
+      );
+      rerankedDocsResult = rerankResponse.reranked_documents; // Extract the array
+      console.log(
+        `[Orchestrator] Reranked via actions.ts, got ${rerankedDocsResult.length} results.`
+      );
+    } catch (error) {
+      console.error(`[Orchestrator] Reranking via actions.ts failed: ${error}`);
+      // Keep rerankedDocsResult as empty array on error
+    }
+
+    // 3. Map reranked results back to SearxngSearchResult format for curation
+    // Create a map for quick lookup of original search results by URL (ID)
+    const searchResultMap = new Map(searchResults.map((r) => [r.url, r]));
+    const rerankedSearchResults = rerankedDocsResult
+      .map((reranked) => {
+        const originalResult = searchResultMap.get(reranked.id);
+        if (originalResult) {
+          // Add the rerank score to the original result object
+          return { ...originalResult, rerankScore: reranked.score };
+        } else {
+          // Should not happen if IDs match, but handle gracefully
+          return null;
+        }
+      })
+      .filter(
+        (r): r is SearxngSearchResult & { rerankScore: number } => r !== null
+      ); // Filter out nulls and type guard
+
+    this.progressUpdater.addLogEntry(
+      "search",
+      "pending",
+      `Curating top ${maxResults} sources from ${rerankedSearchResults.length} reranked results...`,
+      state.currentDepth
+    );
+
+    // 4. Curate based on the reranked list
     const curatedResults = await curateSources(
-      searchResults,
+      rerankedSearchResults, // Use reranked results
       query,
-      maxResults
+      maxResults,
+      true // Add the flag back now that curateSources accepts it
     );
     // Logging completion handled in main loop
 
@@ -869,8 +955,8 @@ export class ResearchOrchestrator {
    * @param state - Current research state.
    */
   private async addDocumentsToVectorStore(
-    scrapeResults: ScrapeResult[], // Accept ScrapeResult array
-    state: ResearchState // Update type
+    scrapeResults: ScrapeResult[],
+    state: ResearchState
   ): Promise<number> {
     this.progressUpdater.addLogEntry(
       "vectorize",
@@ -882,32 +968,44 @@ export class ResearchOrchestrator {
       state,
       "activity",
       "Vectorizing content..."
-    ); // Send UI update
+    );
 
     const documentsToAdd = [];
 
     for (const result of scrapeResults) {
-      // Use the full processed content now that chunking is removed
+      const qualityScore = result.quality_score ?? 1.0;
+      const qualityThreshold = 0.6;
+      if (qualityScore < qualityThreshold) {
+        const warnMsg = `Skipping ${
+          result.url
+        }: Low quality score (${qualityScore.toFixed(
+          2
+        )} < ${qualityThreshold}).`;
+        this.progressUpdater.addLogEntry(
+          "vectorize",
+          "warning",
+          warnMsg,
+          state.currentDepth
+        );
+        this.progressUpdater.updateProgress(state, "warning", warnMsg);
+        continue;
+      }
+
       const contentToUse = result.processed_content;
 
-      // Only add if we have content to use
       if (result.success && contentToUse && contentToUse.trim()) {
-        // Map to the structure expected by vectorStore.addDocuments
         documentsToAdd.push({
-          url: result.url, // Use the url directly
-          text: contentToUse, // Map pageContent to text
+          url: result.url,
+          text: contentToUse,
           metadata: {
-            // Keep other metadata if needed by the store
             source: result.url,
             title: result.title,
             publishedDate: result.publishedDate,
-            // Add other relevant metadata if needed
+            qualityScore: qualityScore,
           },
         });
-        // Also update the sources tracked in the state
         state.allSources[result.url] = result.title || result.url;
       } else if (!result.success) {
-        // Handle specific scrape failures reported by the backend
         const errorMsg = `Skipping ${result.url}: Scraping failed.`;
         this.progressUpdater.addLogEntry(
           "vectorize",
@@ -915,9 +1013,8 @@ export class ResearchOrchestrator {
           errorMsg,
           state.currentDepth
         );
-        this.progressUpdater.updateProgress(state, "warning", errorMsg); // Send UI update
+        this.progressUpdater.updateProgress(state, "warning", errorMsg);
       } else if (!contentToUse || !contentToUse.trim()) {
-        // Check specifically for empty content after successful scrape
         const warnMsg = `Skipping ${result.url}: Empty content after scrape.`;
         this.progressUpdater.addLogEntry(
           "vectorize",
@@ -925,7 +1022,7 @@ export class ResearchOrchestrator {
           warnMsg,
           state.currentDepth
         );
-        this.progressUpdater.updateProgress(state, "warning", warnMsg); // Send UI update
+        this.progressUpdater.updateProgress(state, "warning", warnMsg);
       }
     }
 
@@ -994,8 +1091,8 @@ export class ResearchOrchestrator {
    */
   private async aggregateContextAndGenerateInsights(
     specificQuery: string,
-    originalQuery: string, // Receive originalQuery
-    state: ResearchState // Update type
+    originalQuery: string,
+    state: ResearchState
   ) {
     this.progressUpdater.addLogEntry(
       "synthesis",
@@ -1012,7 +1109,7 @@ export class ResearchOrchestrator {
     // Generate insights using the specific query via the enhanced insight module
     const insightResult = await this.insightModule.generateInsights(
       specificQuery,
-      originalQuery // Pass originalQuery
+      originalQuery
     );
     // Logging handled in main loop based on result
     // Log completion/warning here now

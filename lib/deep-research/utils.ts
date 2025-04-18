@@ -83,19 +83,21 @@ function scoreDomain(url: string): number {
  * @param searchResults - Raw search results
  * @param query - Original search query (for relevance check)
  * @param maxResults - Maximum number of results to return
+ * @param isReranked - Optional flag indicating if the results are reranked
  * @returns Curated list of search results
  */
-export function curateSources(
-  searchResults: SearxngSearchResult[],
+export function curateSources<T extends SearxngSearchResult>(
+  searchResults: T[],
   query: string,
-  maxResults: number
-): SearxngSearchResult[] {
+  maxResults: number,
+  isReranked: boolean = false
+): T[] {
   if (!searchResults || searchResults.length === 0) {
     return [];
   }
 
   const seenUrls = new Set<string>();
-  const uniqueSources: SearxngSearchResult[] = [];
+  const uniqueSources: T[] = [];
 
   for (const result of searchResults) {
     if (!result.url || seenUrls.has(result.url)) {
@@ -118,20 +120,70 @@ export function curateSources(
     }
   }
 
-  // Sort by domain quality score (desc), then by SearxNG score (desc)
+  // Define the type for results that might have a rerank score
+  type ScoredResult = T & { rerankScore?: number };
+
+  // Sort based on whether input was reranked
   const scored = uniqueSources
-    .map((r) => ({
-      result: r,
-      domainScore: scoreDomain(r.url),
-      searchScore: r.score ?? 0, // Use SearxNG score if available
-    }))
-    .sort((a, b) => {
-      // Primary sort: Domain Score (higher is better)
-      if (b.domainScore !== a.domainScore) {
-        return b.domainScore - a.domainScore;
+    .map(
+      (
+        r: T
+      ): {
+        result: T;
+        domainScore: number;
+        searchScore: number;
+        rerankScore?: number;
+      } => ({
+        result: r,
+        domainScore: scoreDomain(r.url),
+        searchScore: r.score ?? 0, // Use SearxNG score if available
+        rerankScore: isReranked ? (r as ScoredResult).rerankScore : undefined, // Get rerank score if applicable
+      })
+    )
+    .map((scoredItem) => {
+      // --- Penalize deep URLs --- NEW STEP ---
+      let finalDomainScore = scoredItem.domainScore;
+      try {
+        const pathSegments = new URL(scoredItem.result.url).pathname
+          .split("/")
+          .filter(Boolean);
+        const depth = pathSegments.length;
+        if (depth > 4) {
+          const penalty = Math.min(0.5, (depth - 4) * 0.1); // Example: 0.1 penalty per level > 4, capped at 0.5
+          finalDomainScore = Math.max(0, scoredItem.domainScore - penalty); // Apply penalty, ensure score >= 0
+          // console.log(`[curateSources] Penalizing deep URL (${depth} levels): ${scoredItem.result.url}, Score ${scoredItem.domainScore} -> ${finalDomainScore}`);
+        }
+      } catch (e) {
+        // Ignore URL parsing errors for penalty calculation
       }
-      // Secondary sort: SearxNG Score (higher is better)
-      return b.searchScore - a.searchScore;
+      return { ...scoredItem, domainScore: finalDomainScore }; // Return item with potentially adjusted domainScore
+    })
+    .sort((a, b) => {
+      if (
+        isReranked &&
+        a.rerankScore !== undefined &&
+        b.rerankScore !== undefined
+      ) {
+        // Primary sort: Rerank Score (higher is better)
+        if (b.rerankScore !== a.rerankScore) {
+          return b.rerankScore - a.rerankScore;
+        }
+        // Fallback to domain score if rerank scores are equal
+        if (b.domainScore !== a.domainScore) {
+          return b.domainScore - a.domainScore;
+        }
+      } else {
+        // Original sort: Domain Score (higher is better)
+        if (b.domainScore !== a.domainScore) {
+          return b.domainScore - a.domainScore;
+        }
+        // Secondary sort: SearxNG Score (higher is better)
+        if (b.searchScore !== a.searchScore) {
+          return b.searchScore - a.searchScore;
+        }
+      }
+      // Final fallback if all else is equal (e.g., keep original relative order)
+      return 0;
     })
     .slice(0, maxResults)
     .map((o) => o.result);

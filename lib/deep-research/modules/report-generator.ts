@@ -9,6 +9,7 @@ import { ReportPlan } from "../types";
 export class ReportGeneratorModule {
   private llmProvider: OpenAICompatibleProvider<string, string, string>;
   private modelId: string;
+  private deliverables: string[];
 
   /**
    * Helper function to clean LLM markdown output.
@@ -29,13 +30,16 @@ export class ReportGeneratorModule {
   /**
    * @param llmProvider - Provider for accessing LLM capabilities
    * @param modelId - ID of the model to use for report generation
+   * @param deliverables - List of expected output formats.
    */
   constructor(
     llmProvider: OpenAICompatibleProvider<string, string, string>,
-    modelId: string
+    modelId: string,
+    deliverables: string[] = []
   ) {
     this.llmProvider = llmProvider;
     this.modelId = modelId;
+    this.deliverables = deliverables;
   }
 
   /**
@@ -68,6 +72,16 @@ export class ReportGeneratorModule {
       }
     );
 
+    // Step 3: Add separators between adjacent links
+    // Regex to find two adjacent markdown links like [index](url)[index2](url2)
+    const adjacentLinkRegex = /(\[[0-9]+\]\([^)]+\))(\[[0-9]+\]\([^)]+\))/g;
+    // Keep replacing until no adjacent links are found
+    let previousText;
+    do {
+      previousText = processedText;
+      processedText = processedText.replace(adjacentLinkRegex, "$1, $2");
+    } while (previousText !== processedText);
+
     return processedText;
   }
 
@@ -77,7 +91,8 @@ export class ReportGeneratorModule {
   async generateFinalReport(
     learnings: Learning[],
     query: string,
-    plan: ReportPlan | null
+    plan: ReportPlan | null,
+    objectives: string[]
   ): Promise<string> {
     const reportTitle = plan?.report_title || `Research Report: ${query}`;
     const outlineSections = plan?.report_outline || [
@@ -180,8 +195,22 @@ export class ReportGeneratorModule {
       )
       .join("\n");
 
+    // --- Objectives & Deliverables guidance --- //
+    const objectivesGuidance = objectives?.length
+      ? `**Research Objectives (must all be addressed):**\n${objectives
+          .map((o) => `- ${o}`)
+          .join("\n")}\n\n`
+      : "";
+
+    const deliverablesGuidance = this.deliverables.length
+      ? `**Output Requirements (deliverables):**\n${this.deliverables
+          .map((d) => `- ${d}`)
+          .join("\n")}\n\n`
+      : "";
+    // --- End Objectives & Deliverables guidance ---
+
     // Construct the prompt (updated to use plan title and section guidance)
-    const prompt = `You are a **subject matter expert and research analyst** tasked with generating an **in-depth, comprehensive, and critically analyzed** research report.
+    const prompt = `${objectivesGuidance}${deliverablesGuidance}You are a **subject matter expert and research analyst** tasked with generating an **in-depth, comprehensive, and critically analyzed** research report.
 
 **Report Title:** ${reportTitle}
 
@@ -276,7 +305,7 @@ ${sectionGuidance}
             const url = indexToUrlMap.get(index);
             if (!url) return null; // Should not happen if audit passes, but safety check
             const title = finalSourceMap.get(url)?.title?.trim() || url;
-            return `${i + 1}. [[${index}] ${title}](${url})`;
+            return `${i + 1}. [${title}](${url})`;
           })
           .filter((item) => item !== null);
         referencesSection = `## References\n\n${referenceItems.join("\n")}`;

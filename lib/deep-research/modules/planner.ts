@@ -42,12 +42,16 @@ interface PlannerDependencies {
  * @param query - Main research query
  * @param state - Current research state (passed for logging/progress updates)
  * @param dependencies - Required modules and functions
+ * @param objectives - Optional list of specific goals for the research.
+ * @param deliverables - Optional list of expected output formats.
  * @returns Promise with the generated ReportPlan
  */
 export async function planInitialResearch(
   query: string,
   state: any,
-  dependencies: PlannerDependencies
+  dependencies: PlannerDependencies,
+  objectives: string[] = [],
+  deliverables: string[] = []
 ): Promise<ReportPlan> {
   const { llmProvider, models, searchModule, addLogEntry, updateProgress } =
     dependencies;
@@ -108,12 +112,27 @@ export async function planInitialResearch(
     updateProgress(state, "warning", `Preliminary search failed.`);
   }
 
+  const objectivesSection =
+    objectives.length > 0
+      ? `\nUser Objectives:\n${objectives.map((o) => `- ${o}`).join("\n")}`
+      : "";
+  const deliverablesSection =
+    deliverables.length > 0
+      ? `\nUser Deliverables:\n${deliverables.map((d) => `- ${d}`).join("\n")}`
+      : "";
+
   const planningPrompt = `You are a research manager planning a report for the query: "${query}".
 
-${prelimContext ? `\n${prelimContext}\n` : ""}
+${objectivesSection ? `**Objectives to satisfy**:${objectivesSection}\n` : ""}
+${
+  deliverablesSection
+    ? `**Expected deliverables**:${deliverablesSection}\n`
+    : ""
+}
+${prelimContext ? `\n**Preliminary Context**:\n${prelimContext}\n` : ""}
 Your task is to create a structured report plan including:
 1. A concise, relevant title for the final report.
-2. A logical outline of 3-5 main sections.
+2. A logical outline of 3-5 main sections. Ensure the outline is structured to fully address **every objective listed above**.
 3. For EACH section, define a specific key question it should answer.
 
 Return ONLY a JSON object matching this schema:

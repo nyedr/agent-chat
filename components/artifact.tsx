@@ -347,6 +347,17 @@ function PureArtifact({
     hideArtifact();
   };
 
+  const getPanelDefaultSizeByKind = (kind: ArtifactKind) => {
+    switch (kind) {
+      case "html":
+        return 70 * 2;
+      default:
+        return 50 * 2;
+    }
+  };
+
+  const panelDefaultSize = getPanelDefaultSizeByKind(artifact.kind);
+
   return (
     <>
       <AnimatePresence>
@@ -456,7 +467,11 @@ function PureArtifact({
                     direction="horizontal"
                     className="w-full"
                   >
-                    <ResizablePanel defaultSize={30} minSize={25} maxSize={50}>
+                    <ResizablePanel
+                      defaultSize={200 - panelDefaultSize}
+                      minSize={25}
+                      maxSize={50}
+                    >
                       <div className="flex flex-col h-full border-r bg-muted/20">
                         <div className="p-3 border-b bg-muted/30 flex items-center justify-between shrink-0">
                           <h3 className="text-sm font-medium">Chat</h3>
@@ -505,7 +520,7 @@ function PureArtifact({
                       </div>
                     </ResizablePanel>
                     <ResizableHandle withHandle />
-                    <ResizablePanel defaultSize={70}>
+                    <ResizablePanel defaultSize={panelDefaultSize}>
                       <ArtifactContent
                         artifact={artifact}
                         setMode={setMode}

@@ -211,7 +211,7 @@ const PurePreviewMessage = ({
             )}
 
             {message.content && mode === "edit" && (
-              <div className="flex flex-row gap-2 items-start">
+              <div className="flex w-full flex-row gap-2 items-start">
                 <MessageEditor
                   key={message.id}
                   message={message}

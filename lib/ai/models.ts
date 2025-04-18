@@ -70,7 +70,9 @@ export interface ModelsByCapability {
   default: string;
 }
 
-export const modelsByCapability: Record<string, ModelsByCapability> = {
+type ModelSet = "deepResearch" | "search";
+
+export const modelsByCapability: Record<ModelSet, ModelsByCapability> = {
   deepResearch: {
     default: DEFAULT_MODEL_NAME,
     light: DEFAULT_LIGHT_MODEL_NAME,

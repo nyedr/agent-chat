@@ -77,10 +77,12 @@ export const revisedToolPrompts: Record<ToolName, string> = {
     *   Do *not* use for simple fact-finding.
     *   **CRITICAL: Call this tool ONLY ONCE per user request that requires deep research. It performs the entire research process internally.**
 *   **Input:**
-    *   \`topic\`: (Required, string) A clearly defined, specific research topic or question suitable for in-depth analysis.
+    *   \`topic\`: (Required, string) **CRITICAL:** Must be a *specific* and *clearly defined* research topic or question. **Vague topics lead to poor results.** Example of good topic: "Impact of 4-bit quantization on Llama-2-7B performance benchmarks (MMLU, latency)". Example of bad topic: "LLM quantization".
+    *   \`objectives\`: (Optional, string[]) **HIGHLY RECOMMENDED:** A list of *specific, actionable goals* or questions the research must answer. Helps focus the research content. **Be precise.** Example: ["Provide MMLU accuracy change for Llama-2-7B after 4-bit GPTQ", "Compare inference latency (ms/token) for FP16 vs 4-bit on A100 GPU"]. Vague objectives like ["Explain quantization"] are less helpful here.
+    *   \`deliverables\`: (Optional, string[]) **HIGHLY RECOMMENDED:** A list describing *concrete, specific* output formats or structures required in the final report. Guides structure and content. Example: ["Include an executive summary (max 200 words)", "Present a markdown table comparing FP16 vs 4-bit metrics (Model, Task, Accuracy, Latency, Size)"]. Generic requests like ["Write a report"] are less effective.
     *   \`extract_top_k_chunks\`: (Optional, number, default: 5) The number of relevant text chunks to extract per source during processing. Adjust only if you have a specific reason based on the topic's nature.
 *   **Output:** A structured research result delivered to you (contains report content, sources, metrics, detailed logs).
-*   **Workflow:** The tool performs multiple steps internally (planning, search, scraping, synthesis). Upon completion, summarize the key findings from the \`reportContent\` in the final result for the user in the chat.
+*   **Workflow:** The tool performs multiple steps internally (planning, sear1ch, scraping, synthesis), heavily guided by the specificity of the \`topic\`, \`objectives\`, and \`deliverables\`. Upon completion, summarize the key findings from the \`reportContent\` in the final result for the user in the chat.
 `,
   pythonInterpreter: `
 **Tool: \`pythonInterpreter\`**

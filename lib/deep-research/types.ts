@@ -64,6 +64,8 @@ export interface ResearchOptions {
   maxIterations?: number;
   researchDepth?: "basic" | "comprehensive";
   extract_top_k_chunks?: number;
+  objectives?: string[];
+  deliverables?: string[];
 }
 
 export interface ResearchAdapter {
@@ -127,4 +129,6 @@ export interface ResearchState {
   researchQueue: Gap[];
   originalQuery: string;
   reportPlan: ReportPlan | null;
+  objectives: string[];
+  deliverables: string[];
 }

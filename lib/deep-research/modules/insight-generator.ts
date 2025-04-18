@@ -106,9 +106,18 @@ export class InsightGeneratorModule {
 
       // If we have a vector store manager, use it to get relevant context
       if (this.vectorStoreManager) {
+        // Adaptive K based on query length (more context for longer/more specific queries)
+        const k = Math.min(12, Math.max(5, specificQuery.split(" ").length));
+        console.log(
+          `[InsightGenerator] Using adaptive k=${k} for query: ${specificQuery.substring(
+            0,
+            30
+          )}...`
+        );
+
         const relevantChunks = await this.vectorStoreManager.search(
           specificQuery,
-          5
+          k // Use adaptive k
         );
         if (relevantChunks.length > 0) {
           // Format the chunks with source information
@@ -152,10 +161,13 @@ export class InsightGeneratorModule {
       // Create a quick lookup map from the context chunks provided to the LLM
       const metadataMap = new Map<string, { title?: string }>();
       if (this.vectorStoreManager) {
+        // Recalculate k for this call as well
+        const k = Math.min(12, Math.max(5, specificQuery.split(" ").length));
+
         // Ensure we have the source of context
         const relevantChunks = await this.vectorStoreManager.search(
           specificQuery,
-          5
+          k // Use adaptive k again
         );
         relevantChunks.forEach((chunk) => {
           if (chunk.metadata?.url && typeof chunk.metadata.url === "string") {
@@ -177,10 +189,48 @@ export class InsightGeneratorModule {
         };
       });
 
+      // --- Deduplicate Learnings --- NEW STEP ---
+      const similarityThreshold = 20; // Example threshold
+      const uniqueLearnings: Learning[] = [];
+      for (const currentLearning of mappedLearnings) {
+        let isDuplicate = false;
+        for (const uniqueLearning of uniqueLearnings) {
+          // Use the private method via 'this'
+          const distance = this.calculateLevenshtein(
+            currentLearning.text,
+            uniqueLearning.text
+          );
+          const maxLength = Math.max(
+            currentLearning.text.length,
+            uniqueLearning.text.length
+          );
+          // Consider it duplicate if distance is small relative to length
+          if (
+            maxLength > 0 &&
+            distance / maxLength < 0.2 &&
+            distance < similarityThreshold
+          ) {
+            isDuplicate = true;
+            // Optional: Merge sources if duplicate found?
+            console.log(
+              `[InsightGenerator] Deduplicating learning (Dist: ${distance}): "${currentLearning.text.substring(
+                0,
+                30
+              )}..."`
+            );
+            break;
+          }
+        }
+        if (!isDuplicate) {
+          uniqueLearnings.push(currentLearning);
+        }
+      }
+      // --- End Deduplication ---
+
       // --- Return Result (No Synthesis) ---
       return {
         ...initialResult,
-        learnings: mappedLearnings,
+        learnings: uniqueLearnings,
       };
     } catch (error) {
       console.error("Error generating insights:", error);
@@ -278,5 +328,25 @@ Return your response in this EXACT JSON format. The 'learnings' array MUST only 
   "analysis": "(Your in-depth analysis here)",
   "followUpQuestions": ["(Follow-up question 1?)", "(Follow-up question 2?)"]
 }`;
+  }
+
+  // Simple Levenshtein distance calculation (can be replaced with a library if needed)
+  private calculateLevenshtein(a: string, b: string): number {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        const cost = a[j - 1] === b[i - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1, // deletion
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        );
+      }
+    }
+    return matrix[b.length][a.length];
   }
 }
